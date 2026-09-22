@@ -109,3 +109,30 @@ Android adds 11 transport/recovery tests (49 total). The final APK passes lint
 with zero errors and its development signature verifies. Audio is memory-only;
 process death still loses it. The phone's actual reconnect/retry UI remains a
 device acceptance check.
+
+The optimized daemon build passed in 8m 19s and replaced the existing service at
+16:54:41 PDT. Readiness returned `preview: streaming`. PID 841685 is the only
+Voxtype **daemon** (other Voxtype processes are status watchers); its executable
+hash matches the release artifact. The journal shows one Unified load in 2.30 s.
+The previous executable and before/after hashes are backed up at
+`~/.local/share/voxtype-mobile/backups/20260922-165441-backpressure/`.
+No service configuration, Tailscale route or model selection changed.
+
+Live burst validation sent 63.036 seconds of the known public speech fixture
+without real-time pacing, deliberately exceeding the old 64-frame queues. It
+completed with all 12 repeated sentences and 94 partial events; no transcription
+errors appeared in the deployment journal. The model caught up in 47.811 seconds
+after this instantaneous upload. This is an overload/replay stress case, **not**
+normal streaming release latency; the phone normally uploads while the user speaks.
+
+A paced 5.253-second follow-up returned its final transcript
+0.619 seconds after release, with the complete test sentence.
+
+## Repository separation
+
+`daemon/` is a proper gitlink at `b472e5f`, with full upstream history and three
+focused fork commits. A throwaway parent clone initialized that exact pin from
+a local URL override successfully. The proposed GitHub fork URL remains awaiting
+publication approval, so a remote recursive clone is not yet verified/available.
+The Android/build/deployment integration is committed in the parent; no vendored
+Rust files or generated model/build outputs are tracked there.
