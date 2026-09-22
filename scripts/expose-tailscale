@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# Mount on the existing HTTPS listener. Serve strips /voxtype before proxying.
+tailscale serve status --json | python3 -c '
+import json,sys
+config=json.load(sys.stdin)
+for host, web in config.get("Web", {}).items():
+    if not host.endswith(":443"):
+        continue
+    for path, handler in web.get("Handlers", {}).items():
+        if path.rstrip("/") == "/voxtype" and handler != {"Proxy": "http://127.0.0.1:8765"}:
+            sys.exit("/voxtype already serves another target. Review that route before changing it.")
+'
+tailscale serve --bg --https=443 --set-path=/voxtype http://127.0.0.1:8765
+tailscale serve status

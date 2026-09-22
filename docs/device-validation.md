@@ -1,0 +1,89 @@
+# Device acceptance checklist
+
+Build and unit tests do not establish Android/OEM accessibility behavior. Run
+these on the actual phone with Tailscale connected and the patched daemon as the
+only running Voxtype service. Record Android version and app versions.
+
+- Grant RECORD_AUDIO and enable the accessibility service. On Android 13+ a
+  sideloaded app may require App info → menu → Allow restricted settings.
+- In a native EditText, Chrome textarea, messaging composer and a Compose text
+  field: button appears above the keyboard without stealing input focus.
+- After updating to 0.1.1, disable/re-enable the accessibility service. Specifically
+  test the ChatGPT Remote **native Android app** composer: button appears when
+  focused, and a final transcript inserts exactly once while its keyboard stays open.
+- Check the small lavender microphone button near the upper right against the
+  reference screenshot, with the keyboard open and closed and after rotation.
+- On recording, verify the order X / activity pill / purple check. The check
+  must remain at the idle button's position through press/release. Voice activity
+  follows microphone loudness and settles to dots in silence. X cancels without
+  insertion or clipboard changes, including while waiting for a final transcript.
+- Hold for 2 seconds, release: recording stops and one final result is inserted.
+- Tap, speak, tap: first release keeps recording; second tap finishes. Include
+  a fast release before the WebSocket handshake completes.
+- On 0.1.3, drag the microphone across the display and along each edge. It should
+  follow the finger fluidly without jumps or snapping on release. The provisional
+  recording is discarded, with no insertion or clipboard changes. Include a
+  long stationary hold followed by a drag, diagonal drags, and small finger jitter
+  during ordinary hold-to-dictate.
+- Tap to record, then drag the purple check: recording continues and releasing
+  the drag does not submit. Tap it again to finish. Also drag while transcribing;
+  the result should still insert exactly once. X should remain accessible when
+  controls expand to either side or stack on a narrow display.
+- Hide/show the keyboard, rotate, and disable/re-enable the service after a drag:
+  position persists and stays within the safe display area above the keyboard.
+  Add a second finger during a press and lock the screen mid-drag: no stuck
+  pressed state, unintended submission, or recording left running after locking.
+- Test start via TalkBack ACTION_CLICK if used; its activation is toggle mode.
+- Speak immediately on down: beginning is preserved by pre-admission buffering.
+- Insert in the middle of existing text, replace a selection in either direction,
+  and insert next to an emoji. Existing text and cursor should be preserved.
+- Ordinary, numeric, web, and visible-password inputs: no button, no insertion.
+  Changing to a password field during recording cancels it.
+- Remove input focus during recording: button remains until finish, then result
+  goes to clipboard. Use the in-app clipboard button with no external field.
+- Editors with unavailable accessibility text/selection: Android 13+ uses the
+  input connection to insert at the real cursor. Where that is unavailable, use
+  accessibility paste; otherwise fall back to clipboard without replacing unknown text.
+- Switch apps during transcription: insert only into the currently focused
+  non-password editor, never the previous app's stale input connection. Go Home
+  or remove focus: final text goes to clipboard. Continuous UI/content updates
+  must not prevent the button from appearing.
+- On 0.1.4, disconnect/reconnect Tailscale while speaking and again after tapping
+  finish. Reconnection should replay all retained speech and insert one complete
+  result, including speech captured while offline. Try a brief desktop busy period.
+- Keep Tailscale disconnected until automatic retries run out: microphone stops,
+  the pill says **Tap to retry**, and X remains available. Reconnect and tap the
+  check; the original recording should insert once without speaking again.
+- With a rejected token, the app should retain audio without repeatedly reconnecting.
+  Correct the saved settings, then tap the check to retry. Locking, entering a
+  password field, pressing X or disabling the service must discard retained audio
+  and prevent scheduled retries or late results from inserting anything.
+- Cancel, lock screen, disable service, deny microphone, wrong token, disconnect
+  Tailscale, stop daemon, slow connection: temporary failures recover as above;
+  permanent microphone errors end capture and are surfaced.
+- Microphone foreground notification and Android privacy indicator appear only
+  during the session. The system binds accessibility with foreground capabilities (AOSP Android 15);
+  OEM behavior still needs checking for background microphone promotion;
+  test this specifically without the settings activity open. The app reports
+  the platform error. Do not silently record through another service.
+- During phone recording, desktop start/stop/cancel must not affect the phone.
+  During desktop recording/transcribing, phone admission must return busy.
+- Warm the patched daemon once, alternate phone and desktop 10 times, including
+  cancel during preview: journal shows one model load; inspect process RSS and
+  GPU memory if applicable. No separate `voxtype transcribe` process is launched.
+- With Unified enabled, the ready event reports `preview: streaming`. Dictate
+  for 5, 20 and 60 seconds: words appear in partial events while speaking and
+  release flushes the tail without a full-recording batch pass. Record the final
+  delay and confirm the first and last words survive. Include repeated phrases,
+  punctuation, silence and cancellation while inference is active.
+- Desktop Unified dictation inserts the complete final once. No cumulative
+  preview is typed repeatedly; hold/release should retain the prior desktop UX.
+- Confirm remote output never types, pastes, plays feedback, pauses media or runs
+  desktop output hooks on Linux. Configured text post-processing still applies.
+
+Android 13+ uses AccessibilityService's InputMethod API, without switching the
+user's keyboard. Its commitText is one-way; a nonstandard editor can ignore it
+without reporting failure. Test actual insertion, selection replacement and
+emoji in the apps above; desktop regression tests cannot establish device behavior.
+
+Platform source checked: [AccessibilityServiceConnection, Android 15](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android15-release/services/accessibility/java/com/android/server/accessibility/AccessibilityServiceConnection.java).

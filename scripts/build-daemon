@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+"$root/scripts/check-daemon"
+if [[ -x "$root/.toolchains/cargo/bin/cargo" ]]; then
+  export CARGO_HOME="$root/.toolchains/cargo" RUSTUP_HOME="$root/.toolchains/rustup"
+  export PATH="$CARGO_HOME/bin:$PATH"
+fi
+cargo build --manifest-path "$root/daemon/Cargo.toml" --locked --release --features parakeet --bin voxtype
+mkdir -p "$root/artifacts"
+cp "$root/daemon/target/release/voxtype" "$root/artifacts/voxtype-mobile-daemon"

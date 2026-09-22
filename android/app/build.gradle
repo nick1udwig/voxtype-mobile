@@ -1,0 +1,21 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'io.voxtype.mobile'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'io.voxtype.mobile'
+        minSdk 29
+        targetSdk 35
+        versionCode 5
+        versionName '0.1.4'
+        testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    buildTypes { release { minifyEnabled false } }
+    testOptions { unitTests.includeAndroidResources = true }
+}
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.17'
+}

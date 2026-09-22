@@ -1,0 +1,9 @@
+{
+  "grants": [
+    {
+      "src": ["YOUR_ANDROID_TAILSCALE_IP/32"],
+      "dst": ["100.126.153.65/32"],
+      "ip": ["tcp:443"]
+    }
+  ]
+}

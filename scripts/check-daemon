@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -f "$root/daemon/Cargo.toml" || ! -e "$root/daemon/.git" ]]; then
+  echo 'Initialize the pinned daemon checkout: git submodule update --init --recursive' >&2
+  exit 1
+fi

@@ -1,0 +1,4 @@
+[submodule "daemon"]
+	path = daemon
+	url = https://github.com/nick1udwig/voxtype.git
+	branch = mobile-api

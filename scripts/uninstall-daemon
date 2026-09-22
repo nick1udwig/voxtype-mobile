@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+config_dir=${XDG_CONFIG_HOME:-$HOME/.config}
+rm -f "$config_dir/systemd/user/voxtype.service.d/90-mobile.conf"
+systemctl --user daemon-reload
+systemctl --user restart voxtype.service
+printf 'Restored the packaged daemon. To remove only the mobile Tailscale listener: tailscale serve --https=443 --set-path=/voxtype off\n'

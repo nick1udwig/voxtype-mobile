@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Installs into the existing service: systemd stops the old model owner first.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+binary=${1:-$root/artifacts/voxtype-mobile-daemon}
+[[ -x "$binary" ]] || { echo "Build first: scripts/build-daemon" >&2; exit 1; }
+config_dir=${XDG_CONFIG_HOME:-$HOME/.config}
+data_dir=${XDG_DATA_HOME:-$HOME/.local/share}/voxtype-mobile
+# This narrow deployment supports the existing standard service command only.
+command_line=$(systemctl --user show voxtype.service --property=ExecStart --value)
+[[ "$command_line" == *'argv[]=/usr/bin/voxtype daemon ;'* || "$command_line" == *"$data_dir/voxtype daemon"* ]] || { echo "Review custom voxtype.service ExecStart before installing." >&2; exit 1; }
+python3 - "$config_dir/voxtype/config.toml" <<'PY'
+import sys,tomllib
+with open(sys.argv[1],'rb') as f: c=tomllib.load(f)
+w=c.get('whisper',{}); p=c.get('parakeet',{})
+assert c.get('engine') == 'parakeet', 'This build/deployment is prepared for the installed Parakeet engine'
+assert not p.get('on_demand_loading',False), 'Disable on-demand loading'
+if p.get('streaming',False):
+    assert p.get('model') == 'parakeet-unified-en-0.6b', 'Use the supported Unified streaming model'
+assert not any(w.get(k,False) for k in ['gpu_isolation','eager_processing','secondary_model']), 'Disable GPU isolation, eager processing and secondary models'
+assert not c.get('meeting',{}).get('enabled',False), 'Disable meeting mode'
+PY
+install -d -m 700 "$data_dir"
+# Keep the previous local executable for a failed update rollback.
+if [[ -f "$data_dir/voxtype" ]]; then cp "$data_dir/voxtype" "$data_dir/voxtype.previous"; fi
+# Atomic rename permits updating a previously installed executable.
+install -m 755 "$binary" "$data_dir/voxtype.next"
+mv "$data_dir/voxtype.next" "$data_dir/voxtype"
+if [[ ! -f "$data_dir/token" ]]; then
+  (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$data_dir/token")
+fi
+chmod 600 "$data_dir/token"
+dropin_dir="$config_dir/systemd/user/voxtype.service.d"
+mkdir -p "$dropin_dir"
+previous_dropin=$(mktemp)
+if [[ -f "$dropin_dir/90-mobile.conf" ]]; then cp "$dropin_dir/90-mobile.conf" "$previous_dropin"; fi
+rollback() {
+  trap - ERR
+  if [[ -s "$previous_dropin" ]]; then cp "$previous_dropin" "$dropin_dir/90-mobile.conf"; else rm -f "$dropin_dir/90-mobile.conf"; fi
+  if [[ -f "$data_dir/voxtype.previous" ]]; then mv "$data_dir/voxtype.previous" "$data_dir/voxtype"; fi
+  rm -f "$previous_dropin"
+  systemctl --user daemon-reload
+  systemctl --user restart voxtype.service
+  echo 'Mobile daemon did not become ready. Restored the previous service configuration.' >&2
+}
+trap rollback ERR
+cat > "$dropin_dir/90-mobile.conf" <<UNIT
+[Service]
+ExecStart=
+ExecStart="$data_dir/voxtype" daemon
+Environment="VOXTYPE_REMOTE_TOKEN_FILE=$data_dir/token"
+Environment=VOXTYPE_REMOTE_BIND=127.0.0.1:8765
+UNIT
+systemctl --user daemon-reload
+systemctl --user restart voxtype.service
+python3 - "$data_dir/token" <<'PYREADY'
+import base64,os,socket,sys,time
+secret=open(sys.argv[1]).read().strip()
+for _ in range(60):
+    try:
+        with socket.create_connection(('127.0.0.1',8765),timeout=1) as sock:
+            key=base64.b64encode(os.urandom(16)).decode()
+            request=(f'GET /v1/dictate HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {secret}\r\n\r\n')
+            sock.sendall(request.encode())
+            if sock.recv(4096).startswith(b'HTTP/1.1 101'): break
+    except OSError: pass
+    time.sleep(1)
+else: raise SystemExit('Mobile API did not become ready in 60 seconds')
+PYREADY
+systemctl --user is-active --quiet voxtype.service
+trap - ERR
+rm -f "$previous_dropin" "$data_dir/voxtype.previous"
+printf 'Daemon replacement started. Check readiness: journalctl --user -u voxtype -n 40\nPairing token file: %s/token\n' "$data_dir"

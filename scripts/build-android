@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ -d "$root/.toolchains/jdk" ]]; then export JAVA_HOME="$root/.toolchains/jdk"; fi
+if [[ -d "$root/.toolchains/android" ]]; then export ANDROID_HOME="$root/.toolchains/android"; fi
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$root/.toolchains/gradle-home}"
+"$root/android/gradlew" -p "$root/android" --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+mkdir -p "$root/artifacts"
+cp "$root/android/app/build/outputs/apk/debug/app-debug.apk" "$root/artifacts/voxtype-mobile-debug.apk"
