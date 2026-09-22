@@ -1,0 +1,2 @@
+# Preserve Windows launcher endings on checkout, normalize them in Git.
+android/gradlew.bat text eol=crlf
