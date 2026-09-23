@@ -48,7 +48,10 @@ only running Voxtype service. Record Android version and app versions.
   non-password editor, never the previous app's stale input connection. Go Home
   or remove focus: final text goes to clipboard. Continuous UI/content updates
   must not prevent the button from appearing.
-- On 0.1.4, disconnect/reconnect Tailscale while speaking and again after tapping
+- On 0.1.5, confirm the finish pill distinguishes Sending, Reconnecting and
+  Transcribing. Compare 5-, 20- and 60-second dictations and note the final delay;
+  a decoder backlog must not cut off the beginning or end of speech.
+- On 0.1.4 or later, disconnect/reconnect Tailscale while speaking and again after tapping
   finish. Reconnection should replay all retained speech and insert one complete
   result, including speech captured while offline. Try a brief desktop busy period.
 - Keep Tailscale disconnected until automatic retries run out: microphone stops,

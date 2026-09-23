@@ -1,8 +1,9 @@
 # Validation — 2026-09-22
 
-- Android debug APK **0.1.4 (versionCode 5)**: built successfully, development signature verified with
+- Android debug APK **0.1.5 (versionCode 6)**: built successfully, development signature verified with
   Android SDK `apksigner` (v2 signature, one signer).
-- Android JVM/Robolectric tests: **49 passed**, covering retained-audio replay, transient server errors, busy
+- Android JVM/Robolectric tests: **53 passed**, covering prompt finish ordering, progress-aware final timeouts,
+  unchanged-preview stall detection, faster stalled-upload recovery, and retained-audio replay, transient server errors, busy
   admission, stale/duplicate results, automatic retry exhaustion, manual retry
   with updated pairing settings, handshake/final timeouts, upload backpressure,
   bounded memory, and hold/tap/cancel/drag, raw
@@ -83,7 +84,7 @@ See [device-validation.md](device-validation.md) for the remaining device and
 resident-model checks. Unified replaces TDT in the existing service; no real
 model was started alongside it and no Tailscale route was changed.
 
-Version 0.1.4 is built and signed but has not been installed or exercised on the
+Version 0.1.5 is built and signed but has not been installed or exercised on the
 Pixel from this workspace. Actual drag smoothness, window/input focus behavior,
 keyboard changes and rotation require the added device checks.
 
@@ -136,3 +137,30 @@ a local URL override successfully. The proposed GitHub fork URL remains awaiting
 publication approval, so a remote recursive clone is not yet verified/available.
 The Android/build/deployment integration is committed in the parent; no vendored
 Rust files or generated model/build outputs are tracked there.
+
+## Latency update — 2026-09-22
+
+Live configuration now uses chunk/left/right = **1.12/5.6/0.56 seconds**, keeping
+Unified as the sole model. On the same 21.012-second burst fixture, completion
+improved from **13.187 to 7.214 seconds**. A 63.036-second paced test retained all
+12 sentences and completed **0.924 seconds after release**, with its first
+partial at 1.732 seconds. These are single-run local fixture checks, not measured
+phone latency or a representative recognition benchmark. The earlier config is
+backed up in `~/.local/share/voxtype-mobile/backups/20260922-171212-streaming-timing/`.
+
+Android v0.1.5 passes **53 tests**, lint has **0 errors / 24 warnings**, and its
+APK signature verifies. Four new regressions cover FIFO finish delivery without
+queue-empty polling, continued inference progress beyond the original timeout,
+identical-preview stalls, and faster detection of blocked uploads. Existing
+cancellation, bounded replay and exactly-once insertion tests continue to pass.
+The daemon's 28 selected remote tests pass with the new timing diagnostics.
+See [performance.md](performance.md) for the deployed profile and limitations.
+
+The latency-instrumented release was deployed at 19:19:06 PDT, with rollback
+binary/hashes at `/home/nick/.local/share/voxtype-mobile/backups/20260922-191906-latency`. PID 1073983 is the sole daemon,
+and its running executable hash matches the artifact. It loaded Unified once in
+2.27 seconds with the 1.12/5.6/0.56 profile. A paced 5.253-second post-deployment
+check returned the complete sentence 0.351 seconds after release.
+Both transport and worker logs report about 350 ms after finish and zero measured
+queue-capacity wait. No model copy or alternate inference process was started.
+The active submodule pin is `b5eb60f`; GitHub publication remains pending approval.

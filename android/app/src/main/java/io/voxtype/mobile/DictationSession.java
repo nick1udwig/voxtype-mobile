@@ -47,6 +47,15 @@ final class DictationSession extends WebSocketListener {
   private int maxSeconds = 300;
   private boolean ready, finished, finishSent, done, paused;
   private long generation, deadline, lastProgress, lastQueue;
+  private String lastPartial = "";
+  private String lastState = "";
+
+  private void state(String value) {
+    if (!value.equals(lastState)) {
+      lastState = value;
+      listener.state(value);
+    }
+  }
 
   DictationSession(
       DictationClient.Listener listener, WebSocket.Factory factory, Scheduler scheduler) {
@@ -63,12 +72,13 @@ final class DictationSession extends WebSocketListener {
   private void connect() {
     if (done || paused) return;
     ready = finishSent = false;
+    lastPartial = "";
     nextFrame = 0;
     deadline = scheduler.now() + 15000;
     long id = ++generation;
     try {
       socket = factory.newWebSocket(request, this);
-      listener.state(finished ? "Transcribing… reconnecting" : "Connecting…");
+      state(finished ? "Transcribing… reconnecting" : "Connecting…");
       scheduler.after(20, () -> pump(id));
     } catch (Exception e) {
       recover("Cannot connect to Voxtype", true);
@@ -101,7 +111,7 @@ final class DictationSession extends WebSocketListener {
   synchronized void finish() {
     if (done) return;
     finished = true;
-    if (!paused) listener.state("Transcribing…");
+    if (!paused) state(ready ? "Transcribing… sending audio" : "Transcribing… reconnecting");
   }
 
   synchronized void retry() {
@@ -145,7 +155,7 @@ final class DictationSession extends WebSocketListener {
       long queued = socket.queueSize();
       if (queued < lastQueue || queued == 0) lastProgress = now;
       lastQueue = queued;
-      if (queued > 0 && now - lastProgress >= 60000) {
+      if (queued > 0 && now - lastProgress >= 15000) {
         recover("Audio upload stalled", true);
         return;
       }
@@ -161,13 +171,21 @@ final class DictationSession extends WebSocketListener {
         sent += frame.size();
         lastProgress = now;
       }
-      if (finished && nextFrame == audio.size() && !finishSent && socket.queueSize() == 0) {
+      // WebSocket messages are FIFO. Queue finish immediately behind the last
+      // audio frame; waiting for queueSize()==0 adds an unnecessary polling gap.
+      if (finished && nextFrame == audio.size() && !finishSent) {
         if (!socket.send("{\"type\":\"finish\"}")) {
           recover("Connection ended before transcription", true);
           return;
         }
         finishSent = true;
         deadline = now + 180000;
+      }
+      if (finished) {
+        state(
+            finishSent && socket.queueSize() == 0
+                ? "Transcribing…"
+                : "Transcribing… sending audio");
       }
       if (finishSent && now >= deadline) {
         recover("Voxtype did not return a transcript", true);
@@ -185,8 +203,7 @@ final class DictationSession extends WebSocketListener {
       return;
     }
     long delay = Math.min(8000, 500L << retries++);
-    listener.state(
-        (finished ? "Transcribing… " : "Recording. ") + "Reconnecting (" + retries + "/8)…");
+    state((finished ? "Transcribing… " : "Recording. ") + "Reconnecting (" + retries + "/8)…");
     long id = generation;
     scheduler.after(
         delay,
@@ -229,10 +246,17 @@ final class DictationSession extends WebSocketListener {
           ready = true;
           lastProgress = scheduler.now();
           lastQueue = 0;
-          listener.state(finished ? "Transcribing…" : "Recording");
+          state(finished ? "Transcribing… sending audio" : "Recording");
           break;
         case "partial":
-          if (ready) listener.partial(event.getString("text"));
+          if (ready) {
+            String partial = event.getString("text");
+            // Don't throw away expensive, still-progressing inference merely
+            // because its total runtime exceeds a fixed final-result deadline.
+            if (finishSent && !partial.equals(lastPartial)) deadline = scheduler.now() + 180000;
+            lastPartial = partial;
+            listener.partial(partial);
+          }
           break;
         case "final":
           if (!finishSent) {

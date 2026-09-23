@@ -27,6 +27,9 @@ The full parentage is preserved; this is not an unrelated initial import or a
 squash of upstream. No model files, compiled binaries, pairing tokens or Android
 sources are included in the fork. The upstream MIT license remains intact.
 
+- `b5eb60f`: metadata-only transport/worker latency records and prompt forwarding
+  of small TCP frames.
+
 ## Normal development
 
 ```bash

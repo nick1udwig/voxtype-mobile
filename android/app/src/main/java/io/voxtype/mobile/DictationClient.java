@@ -26,7 +26,7 @@ final class DictationClient {
       new OkHttpClient.Builder()
           .connectTimeout(10, TimeUnit.SECONDS)
           .readTimeout(0, TimeUnit.SECONDS)
-          .pingInterval(15, TimeUnit.SECONDS)
+          .pingInterval(5, TimeUnit.SECONDS)
           .build();
   private final Listener listener;
   private final DictationSession session;

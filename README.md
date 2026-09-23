@@ -29,6 +29,9 @@ Tailscale/deployment scripts and integration documentation stay here. See
 [the fork/upstream workflow](docs/daemon-upstream.md) for the commit split and
 upstream contribution instructions.
 
+For the deployed CPU streaming profile, measured latency, and recovery diagnostics,
+see [performance.md](docs/performance.md).
+
 ## Behavior
 
 A floating accessibility button appears for editable non-password fields. Hold

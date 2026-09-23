@@ -13,8 +13,7 @@ Desktop and phone use the same `ParakeetUnifiedHandle`. In the pinned
 `Arc<Mutex<ParakeetUnifiedModel>>` holding the ONNX sessions. Each recording gets
 new decoder state, not another model load. Global admission still allows only
 one desktop or phone session. Disconnect, cancellation and errors join the worker
-before that admission is released. Overloaded audio queues cancel instead of
-silently losing audio. No remote results invoke desktop output handlers.
+before that admission is released. Full audio queues apply bounded backpressure without dropping samples. No remote results invoke desktop output handlers.
 
 The streaming implementation uses bounded context windows and persistent decoder
 state. It recomputes overlapping encoder context; describing it as fully
@@ -53,6 +52,10 @@ before the service stops and the replacement starts.
 The batch path is retained for installations that keep TDT. It still performs
 cumulative batch previews and a whole-recording final pass; this was the source
 of avoidable repeated work in the earlier phone implementation.
+
+The deployed CPU profile now uses a **1.12-second chunk** with the same
+5.6-second left context and 0.56-second right context. See
+[performance.md](performance.md) for the measured comparison and recovery behavior.
 
 ## Accuracy and speed
 

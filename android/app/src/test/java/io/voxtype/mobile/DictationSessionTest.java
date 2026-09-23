@@ -292,6 +292,61 @@ public class DictationSessionTest {
   }
 
   @Test
+  public void finishQueuesBehindAudioWithoutWaitingForSocketToDrain() {
+    start();
+    ready();
+    current().queued = 3200;
+    session.audio(new byte[] {1, 2});
+    session.finish();
+    clock.advance(20);
+    assertEquals(1, current().frames.size());
+    assertEquals(1, current().finishes);
+    assertTrue(listener.results.isEmpty());
+  }
+
+  @Test
+  public void progressingTranscriptionDoesNotRestartAtOriginalDeadline() {
+    start();
+    ready();
+    session.audio(new byte[] {1, 2});
+    session.finish();
+    clock.advance(20);
+    clock.advance(170000);
+    session.onMessage(current(), "{\"type\":\"partial\",\"text\":\"progress\"}");
+    clock.advance(20000);
+    assertEquals(1, sockets.size());
+    finalText(current());
+    assertEquals(List.of("hello"), listener.results);
+  }
+
+  @Test
+  public void repeatedIdenticalPartialCannotKeepStalledInferenceAliveForever() {
+    start();
+    ready();
+    session.audio(new byte[] {1, 2});
+    session.finish();
+    clock.advance(20);
+    session.onMessage(current(), "{\"type\":\"partial\",\"text\":\"same\"}");
+    clock.advance(170000);
+    session.onMessage(current(), "{\"type\":\"partial\",\"text\":\"same\"}");
+    clock.advance(10500);
+    assertEquals(2, sockets.size());
+    assertEquals(2, session.retainedBytes());
+  }
+
+  @Test
+  public void stalledUploadRetriesWithoutWaitingAMinute() {
+    start();
+    ready();
+    current().queued = 64000;
+    session.audio(new byte[] {1, 2});
+    session.finish();
+    clock.advance(15500);
+    assertEquals(2, sockets.size());
+    assertEquals(2, session.retainedBytes());
+  }
+
+  @Test
   public void cancelDiscardsAudioAndInvalidatesPendingReconnect() {
     start();
     session.audio(new byte[] {1, 2});

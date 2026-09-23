@@ -204,6 +204,7 @@ public class DictationService extends AccessibilityService {
                   post(
                       () -> {
                         if (text.startsWith("Transcribing")) waiting = true;
+                        activity.status(text);
                         activity.setContentDescription(text);
                         refreshButton();
                       });

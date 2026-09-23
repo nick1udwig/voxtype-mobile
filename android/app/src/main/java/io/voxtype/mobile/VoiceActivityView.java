@@ -12,6 +12,7 @@ final class VoiceActivityView extends View {
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
   private final float[] levels = new float[11], drawn = new float[11];
   private boolean waiting, retry;
+  private String phase = "Transcribing…";
   private long lastDraw;
 
   VoiceActivityView(Context context) {
@@ -49,8 +50,21 @@ final class VoiceActivityView extends View {
     lastDraw = 0;
     waiting = false;
     retry = false;
+    phase = "Transcribing…";
     setContentDescription("Microphone activity");
     invalidate();
+  }
+
+  void status(String status) {
+    String value = status.toLowerCase(java.util.Locale.ROOT);
+    String next =
+        value.contains("reconnect")
+            ? "Reconnecting…"
+            : value.contains("sending") ? "Sending…" : "Transcribing…";
+    if (!next.equals(phase)) {
+      phase = next;
+      invalidate();
+    }
   }
 
   @Override
@@ -68,7 +82,7 @@ final class VoiceActivityView extends View {
       paint.setTextAlign(Paint.Align.CENTER);
       paint.setTextSize(10);
       canvas.drawText(
-          retry ? "Tap to retry" : "Transcribing…",
+          retry ? "Tap to retry" : phase,
           width / 2,
           height / 2 - (paint.ascent() + paint.descent()) / 2,
           paint);
