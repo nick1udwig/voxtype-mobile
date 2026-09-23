@@ -44,6 +44,14 @@ final class DictationSession extends WebSocketListener {
   private Request request;
   private WebSocket socket;
   private int bytes, nextFrame, retries;
+  private int frameOffset, sentBytes;
+  private boolean resumable;
+  private String sessionId = newSessionId();
+
+  private static String newSessionId() {
+    return java.util.UUID.randomUUID().toString().replace("-", "");
+  }
+
   private int maxSeconds = 300;
   private boolean ready, finished, finishSent, done, paused;
   private long generation, deadline, lastProgress, lastQueue;
@@ -74,10 +82,13 @@ final class DictationSession extends WebSocketListener {
     ready = finishSent = false;
     lastPartial = "";
     nextFrame = 0;
+    frameOffset = sentBytes = 0;
     deadline = scheduler.now() + 15000;
     long id = ++generation;
     try {
-      socket = factory.newWebSocket(request, this);
+      socket =
+          factory.newWebSocket(
+              request.newBuilder().header("X-Voxtype-Session", sessionId).build(), this);
       state(finished ? "Transcribing… reconnecting" : "Connecting…");
       scheduler.after(20, () -> pump(id));
     } catch (Exception e) {
@@ -123,6 +134,11 @@ final class DictationSession extends WebSocketListener {
 
   synchronized void retry(Request replacement) {
     if (!canRetry()) return;
+    if (!replacement.url().equals(request.url())
+        || !java.util.Objects.equals(
+            replacement.header("Authorization"), request.header("Authorization"))) {
+      sessionId = newSessionId();
+    }
     request = replacement;
     retry();
   }
@@ -130,7 +146,18 @@ final class DictationSession extends WebSocketListener {
   synchronized void cancel() {
     if (done) return;
     done = true;
-    disconnect();
+    ++generation;
+    ready = false;
+    WebSocket old = socket;
+    socket = null;
+    if (old != null) {
+      // Flush explicit cancellation, including during the opening handshake.
+      // Abruptly closing a resumable socket means "retain for reconnect".
+      if (old.send("{\"type\":\"cancel\"}")) {
+        old.close(1000, "cancelled");
+        scheduler.after(5000, old::cancel);
+      } else old.cancel();
+    }
     audio.clear();
     bytes = 0;
   }
@@ -162,13 +189,19 @@ final class DictationSession extends WebSocketListener {
       // Pace replay in small bursts and let TCP backpressure slow uploads without losing audio.
       int sent = 0;
       while (nextFrame < audio.size() && socket.queueSize() < 64000 && sent < 16000) {
-        ByteString frame = audio.get(nextFrame);
+        ByteString payload = audio.get(nextFrame).substring(frameOffset);
+        ByteString frame =
+            resumable
+                ? new okio.Buffer().writeLong(sentBytes).write(payload).readByteString()
+                : payload;
         if (!socket.send(frame)) {
           recover("Audio connection interrupted", true);
           return;
         }
         ++nextFrame;
-        sent += frame.size();
+        frameOffset = 0;
+        sentBytes += payload.size();
+        sent += payload.size();
         lastProgress = now;
       }
       // WebSocket messages are FIFO. Queue finish immediately behind the last
@@ -243,6 +276,25 @@ final class DictationSession extends WebSocketListener {
             return;
           }
           maxSeconds = seconds;
+          resumable = event.optBoolean("resume", false);
+          long accepted = resumable ? event.getLong("accepted_bytes") : 0;
+          boolean serverFinished = resumable && event.getBoolean("finished");
+          if (accepted < 0
+              || accepted > bytes
+              || accepted % 2 != 0
+              || (resumable && !event.getString("framing").equals("offset_pcm_s16le"))
+              || (serverFinished && (!finished || accepted != bytes))) {
+            recover("Invalid resume checkpoint", false);
+            return;
+          }
+          sentBytes = (int) accepted;
+          frameOffset = sentBytes;
+          nextFrame = 0;
+          while (nextFrame < audio.size() && frameOffset >= audio.get(nextFrame).size()) {
+            frameOffset -= audio.get(nextFrame++).size();
+          }
+          finishSent = serverFinished;
+          if (serverFinished) deadline = scheduler.now() + 180000;
           ready = true;
           lastProgress = scheduler.now();
           lastQueue = 0;
@@ -269,14 +321,19 @@ final class DictationSession extends WebSocketListener {
           audio.clear();
           bytes = 0;
           listener.result(result); // Exactly once for this user dictation, across all attempts.
+          if (resumable) ws.send("{\"type\":\"ack\"}");
           ws.close(1000, "done");
           break;
         case "error":
           String code = event.optString("code", "server_error");
+          // Inference failures/expired sessions require a new worker; transport
+          // losses retain the ID so an existing worker/result can be resumed.
+          if (!code.equals("busy")) sessionId = newSessionId();
           boolean retryable =
               code.equals("busy")
                   || code.equals("transcription_failed")
                   || code.equals("model_unavailable")
+                  || code.equals("session_expired")
                   || code.equals("server_error");
           recover("Voxtype: " + code, retryable);
           break;

@@ -16,6 +16,6 @@ hooks, or desktop dictation context. Cancellation cannot detach a blocking
 inference and free admission before it completes. Audio queues must stay bounded.
 
 Use `scripts/build-android` for APK, unit tests and lint. Use
-`cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::tests`
+`cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::`
 and `scripts/build-daemon` for the fork. Build helpers discover `.toolchains/`.
 Real phone behavior requires the checks in `docs/device-validation.md`.

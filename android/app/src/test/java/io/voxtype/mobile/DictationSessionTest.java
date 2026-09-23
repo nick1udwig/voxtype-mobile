@@ -46,6 +46,7 @@ public class DictationSessionTest {
     final Request request;
     final List<ByteString> frames = new ArrayList<>();
     int finishes;
+    final List<String> controls = new ArrayList<>();
     long queued;
     boolean cancelled, reject;
 
@@ -69,7 +70,8 @@ public class DictationSessionTest {
 
     public boolean send(String text) {
       if (reject) return false;
-      finishes++;
+      controls.add(text);
+      if (text.contains("finish")) finishes++;
       return true;
     }
 
@@ -135,6 +137,119 @@ public class DictationSessionTest {
 
   void finalText(Socket socket) {
     session.onMessage(socket, "{\"type\":\"final\",\"text\":\"hello\"}");
+  }
+
+  void resumeReady(long accepted, boolean finished) {
+    session.onMessage(
+        current(),
+        READY.substring(0, READY.length() - 1)
+            + ",\"resume\":true,\"accepted_bytes\":"
+            + accepted
+            + ",\"finished\":"
+            + finished
+            + ",\"framing\":\"offset_pcm_s16le\"}");
+  }
+
+  ByteString framed(long offset, byte... bytes) {
+    return new okio.Buffer().writeLong(offset).write(bytes).readByteString();
+  }
+
+  @Test
+  public void resumeSkipsAcceptedAudioAndHandlesCheckpointInsideFrame() {
+    start();
+    session.audio(new byte[] {1, 2, 3, 4});
+    session.audio(new byte[] {5, 6});
+    resumeReady(0, false);
+    clock.advance(20);
+    String id = current().request().header("X-Voxtype-Session");
+    lost(current());
+    clock.advance(500);
+    resumeReady(2, false);
+    clock.advance(20);
+    assertEquals(id, current().request().header("X-Voxtype-Session"));
+    assertEquals(
+        List.of(framed(2, (byte) 3, (byte) 4), framed(4, (byte) 5, (byte) 6)), current().frames);
+    assertEquals(6, session.retainedBytes());
+  }
+
+  @Test
+  public void cachedFinalIsAcceptedWithoutUploadOrAnotherFinishAndAcknowledgedOnce() {
+    start();
+    session.audio(new byte[] {1, 2});
+    session.finish();
+    resumeReady(0, false);
+    clock.advance(20);
+    Socket old = current();
+    lost(old);
+    clock.advance(500);
+    resumeReady(2, true);
+    finalText(old);
+    finalText(current());
+    finalText(current());
+    clock.advance(100);
+    assertTrue(current().frames.isEmpty());
+    assertEquals(0, current().finishes);
+    assertEquals(List.of("hello"), listener.results);
+    assertEquals(List.of("{\"type\":\"ack\"}"), current().controls);
+    assertEquals(0, session.retainedBytes());
+  }
+
+  @Test
+  public void serverRestartCanRequestFullReplayWithoutLosingSpeech() {
+    start();
+    session.audio(new byte[] {1, 2});
+    resumeReady(0, false);
+    clock.advance(20);
+    lost(current());
+    session.audio(new byte[] {3, 4});
+    clock.advance(500);
+    resumeReady(0, false);
+    clock.advance(20);
+    assertEquals(
+        List.of(framed(0, (byte) 1, (byte) 2), framed(2, (byte) 3, (byte) 4)), current().frames);
+  }
+
+  @Test
+  public void invalidResumeCheckpointPausesWithoutInsertingOrDiscarding() {
+    start();
+    session.audio(new byte[] {1, 2});
+    resumeReady(4, false);
+    assertTrue(session.canRetry());
+    assertEquals(2, session.retainedBytes());
+    assertTrue(listener.results.isEmpty());
+  }
+
+  @Test
+  public void serverCannotClaimFinishedWhilePhoneStillRecording() {
+    start();
+    session.audio(new byte[] {1, 2});
+    resumeReady(2, true);
+    assertTrue(session.canRetry());
+    assertTrue(listener.results.isEmpty());
+  }
+
+  @Test
+  public void inferenceFailureUsesFreshSessionIdButConnectionFailureKeepsIt() {
+    start();
+    String first = current().request().header("X-Voxtype-Session");
+    resumeReady(0, false);
+    lost(current());
+    clock.advance(500);
+    assertEquals(first, current().request().header("X-Voxtype-Session"));
+    session.onMessage(current(), "{\"type\":\"error\",\"code\":\"transcription_failed\"}");
+    clock.advance(1000);
+    assertNotEquals(first, current().request().header("X-Voxtype-Session"));
+  }
+
+  @Test
+  public void explicitCancelIsSentEvenBeforeReadyAndTerminatesRetries() {
+    start();
+    Socket old = current();
+    session.cancel();
+    assertEquals(List.of("{\"type\":\"cancel\"}"), old.controls);
+    clock.advance(5000);
+    assertTrue(old.cancelled);
+    assertEquals(1, sockets.size());
   }
 
   @Test

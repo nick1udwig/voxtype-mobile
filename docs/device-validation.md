@@ -52,8 +52,20 @@ only running Voxtype service. Record Android version and app versions.
   Transcribing. Compare 5-, 20- and 60-second dictations and note the final delay;
   a decoder backlog must not cut off the beginning or end of speech.
 - On 0.1.4 or later, disconnect/reconnect Tailscale while speaking and again after tapping
-  finish. Reconnection should replay all retained speech and insert one complete
-  result, including speech captured while offline. Try a brief desktop busy period.
+  finish. Reconnection should preserve all retained speech and insert one complete
+  result, including speech captured while offline. On 0.1.6, brief reconnects
+  should resume without replaying accepted audio: logs show `resumed=true` and
+  an increasing `accepted_bytes`, with one worker completion. Try a brief desktop
+  busy period.
+- On 0.1.6, interrupt Wi-Fi/cellular/Tailscale after finish and reconnect within
+  90 seconds of completion. The same final should insert once without another
+  recognition pass. Reconnect after daemon restart or after cache expiry: retained
+  audio should replay successfully. Cancel while connecting and during upload;
+  a new dictation must become available once prior inference joins. Cancel while
+  offline: no late result may insert; the abandoned session eventually expires.
+- Leave an unfinished recording disconnected for over 30 seconds, then retry.
+  Verify full replay after expiry, without losing offline speech. After successful
+  delivery, inspect metadata logs for one model load across repeated reconnects.
 - Keep Tailscale disconnected until automatic retries run out: microphone stops,
   the pill says **Tap to retry**, and X remains available. Reconnect and tap the
   check; the original recording should insert once without speaking again.

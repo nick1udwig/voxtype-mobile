@@ -52,9 +52,32 @@ the burst tests retained all four. This fixture is not a broad accuracy benchmar
   alive indefinitely. The daemon's existing overall time limit still applies.
 - Show **Sending…**, **Reconnecting…** and **Transcribing…** during the finish phase.
 - Preserve the bounded recording, automatic replay, manual retry and single final
-  insertion guarantees introduced in 0.1.4. A reconnect still replays the complete
-  audio; this is not resumable inference, so a long recording after a network loss
-  can take longer than uninterrupted streaming.
+  insertion guarantees introduced in 0.1.4. Version 0.1.6 adds session resumption.
+
+## Android 0.1.6 and resumable daemon sessions
+
+Brief network losses no longer restart decoding from the beginning. The client
+uses an authenticated session ID and byte offsets; the daemon returns the amount
+of PCM already accepted and continues the same inference worker. Finished results
+are cached for 90 seconds so a lost final response can be recovered immediately.
+The client acknowledges delivery to remove that cached transcript early.
+
+Unfinished disconnected sessions expire after 30 seconds (two seconds if empty).
+Finished sessions can complete offline within the 480-second overall deadline.
+Caches are memory-only, capped at eight entries, and erase text on expiry/eviction.
+The audio spool is capped by the recording limit (at most 300 seconds / 19.2 MB
+of float PCM, plus bounded transport and inference channels). Only one model
+owner and one admitted dictation remain possible. Explicit cancellation and
+connection replacement are distinguished from temporary disconnection.
+
+A live 10.506-second fixture recovered disconnects during recording and after
+finish, returning both complete sentences 0.771 seconds after release. A further
+reconnect retrieved the cached result in under 1 ms with no additional inference.
+These are local fixture measurements, not phone-network latency.
+
+Daemon restart, expired cache or failed inference still replays retained audio;
+resumption cannot fix slow hardware or a backend that stops making progress.
+
 
 The phone was reachable directly through Tailscale during inspection. A cold
 probe took 539 ms; three subsequent direct probes took 44, 289 and 124 ms. These probes are not an Android
@@ -63,10 +86,14 @@ network or application/editor delays.
 
 ## Diagnostics
 
-The daemon emits two metadata-only completion records:
+The daemon emits metadata-only completion records:
 
 - `Mobile transport completed`: received audio duration, session duration and
   time from receiving the finish control to the final/error event.
+- `Mobile resumable session completed`: accepted audio duration, session duration
+  and time after receiving finish for clients using resumption.
+- `Mobile session attached`: whether this is a reconnect, accepted PCM bytes and
+  whether finish was accepted; no session IDs are logged.
 - `Mobile streaming worker completed`: audio duration, session duration, time
   after the worker receives finish, and time waiting for inference queue capacity.
 

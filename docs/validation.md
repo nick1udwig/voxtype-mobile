@@ -1,8 +1,8 @@
 # Validation — 2026-09-22
 
-- Android debug APK **0.1.5 (versionCode 6)**: built successfully, development signature verified with
+- Android debug APK **0.1.6 (versionCode 7)**: built successfully, development signature verified with
   Android SDK `apksigner` (v2 signature, one signer).
-- Android JVM/Robolectric tests: **53 passed**, covering prompt finish ordering, progress-aware final timeouts,
+- Android JVM/Robolectric tests: **60 passed**, covering resumable uploads, cached results, explicit cancellation, prompt finish ordering, progress-aware final timeouts,
   unchanged-preview stall detection, faster stalled-upload recovery, and retained-audio replay, transient server errors, busy
   admission, stale/duplicate results, automatic retry exhaustion, manual retry
   with updated pairing settings, handshake/final timeouts, upload backpressure,
@@ -26,8 +26,9 @@
   while the microphone/check stays under the finger. A drag discards capture
   started by that press, but preserves an already-running dictation. This update
   changes only the Android app and continues using the deployed Unified daemon.
-- Rust: **38 selected tests passed** (13 Parakeet streaming worker/configuration
-  tests and 25 tests matching `remote::tests`). The WebSocket test uses
+- Rust: **38 remote tests passed** in the latest run, including session resumption.
+  The earlier deployment also passed 13 Parakeet streaming worker/configuration
+  tests. The WebSocket tests use
   an authenticated loopback connection; every transcriber used is a fake.
 - Daemon: optimized release build with `--features parakeet --bin voxtype` passed.
   `--version` returns 1.0.1; `ldd` resolves all required libraries on this host.
@@ -84,7 +85,7 @@ See [device-validation.md](device-validation.md) for the remaining device and
 resident-model checks. Unified replaces TDT in the existing service; no real
 model was started alongside it and no Tailscale route was changed.
 
-Version 0.1.5 is built and signed but has not been installed or exercised on the
+Version 0.1.6 is built and signed but has not been installed or exercised on the
 Pixel from this workspace. Actual drag smoothness, window/input focus behavior,
 keyboard changes and rotation require the added device checks.
 
@@ -164,3 +165,42 @@ check returned the complete sentence 0.351 seconds after release.
 Both transport and worker logs report about 350 ms after finish and zero measured
 queue-capacity wait. No model copy or alternate inference process was started.
 The active submodule pin is `b5eb60f`; GitHub publication remains pending approval.
+
+
+## Resumable sessions — 2026-09-22
+
+Android **0.1.6 (code 7)** passes **60 unit tests**, with **0 lint errors / 24
+warnings**; APK v2 development signature verifies. Seven new client regressions
+cover acknowledged-prefix upload, checkpoints within a frame, cached final
+retrieval, daemon restart replay, invalid checkpoints, session identity across
+network versus inference failures, and explicit cancellation before readiness.
+
+The daemon passes **38 tests matching `remote::`** (including the nested resume
+module). Real WebSocket tests with fake inference verify one worker across a
+reconnect, exact sample delivery without duplicated audio, cached final recovery,
+stale-connection rejection, invalid offsets and cancellation before the next
+admission. Virtual-clock tests verify reconnect expiry, final cache erasure,
+offline completion after finish, byte limits and duplicate accounting. These
+tests instantiate no real model. The independent daemon commit is `5e8311c`.
+
+Brief disconnects retain the original streaming inference; completed results are
+cached for 90 seconds or until acknowledgment/eviction. State is bounded and
+memory-only. Restart/expiry/inference error can still require full replay from
+the Android recording. Actual Wi-Fi/cellular handoff, editor insertion and
+cancellation on the Pixel require [device checks](device-validation.md).
+
+The release build completed in 2m 33s. The existing service was replaced at
+20:09:03 PDT, with rollback binary and hashes at
+`~/.local/share/voxtype-mobile/backups/20260922-200903-resume/`. PID 1158366 was
+verified as the sole daemon, and its executable hash matches the release artifact.
+The journal records one Unified load in 2.44 seconds with the unchanged
+1.12/5.6/0.56 timing profile. Tailscale routing remains `/voxtype` on HTTPS 443.
+
+A paced **10.506-second** public fixture test disconnected after three seconds,
+resumed at **96,000 accepted PCM bytes**, disconnected again just after finish,
+and recovered both complete test sentences **0.771 seconds after release**.
+A further reconnect retrieved the identical cached final in **under 1 ms** locally,
+without any audio upload or additional inference. The journal records one
+10.506-second completed worker and three resumed attachments. The client then
+acknowledged the final to clear the cache. These are single-run loopback timings,
+not phone-network latency measurements. Real Wi-Fi/cellular handoff is untested.

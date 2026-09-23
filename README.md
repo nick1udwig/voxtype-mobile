@@ -44,7 +44,8 @@ can also be started from the settings app. Locking or entering a password field
 cancels recording.
 
 Temporary transport, busy-daemon and transcription errors reconnect automatically
-and replay retained audio, with backoff and at most eight retries. Full queues
+and resume accepted audio with backoff and at most eight retries. Daemon restart,
+expired sessions or inference errors replay retained audio. Full queues
 wait for capacity. If recovery still fails, capture stops and **Tap to retry**
 keeps the recording available; X discards it. The hard limit is five minutes
 (9.6 MB PCM), held only in process memory. Closing the service, locking the phone
@@ -172,7 +173,7 @@ tailscale serve --https=443 --set-path=/voxtype off
 ## Verification
 
 ```sh
-cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::tests
+cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::
 android/gradlew -p android :app:testDebugUnitTest :app:lintDebug
 ```
 

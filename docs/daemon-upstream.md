@@ -29,6 +29,8 @@ sources are included in the fork. The upstream MIT license remains intact.
 
 - `b5eb60f`: metadata-only transport/worker latency records and prompt forwarding
   of small TCP frames.
+- `5e8311c`: optional resumable remote sessions, bounded PCM spool, expiring
+  unacknowledged result cache and reconnect/cancellation regression tests.
 
 ## Normal development
 
