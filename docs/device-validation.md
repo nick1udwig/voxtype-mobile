@@ -91,6 +91,12 @@ only running Voxtype service. Record Android version and app versions.
   release flushes the tail without a full-recording batch pass. Record the final
   delay and confirm the first and last words survive. Include repeated phrases,
   punctuation, silence and cancellation while inference is active.
+- On Omarchy, Super+Ctrl+X (the installed `voxtype record toggle` binding)
+  starts dictation, shows the recording indicator, then stops and inserts the
+  complete final. Test explicit `record start` / `record stop` as well as cancel.
+  State should progress recording → transcribing → idle. File overrides must
+  write only to the requested file. Configured processing/output hooks and
+  modifier-release handling must behave like normal desktop dictation.
 - Desktop Unified dictation inserts the complete final once. No cumulative
   preview is typed repeatedly; hold/release should retain the prior desktop UX.
 - Confirm remote output never types, pastes, plays feedback, pauses media or runs

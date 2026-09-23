@@ -31,6 +31,8 @@ sources are included in the fork. The upstream MIT license remains intact.
   of small TCP frames.
 - `5e8311c`: optional resumable remote sessions, bounded PCM spool, expiring
   unacknowledged result cache and reconnect/cancellation regression tests.
+- `b407839`: preserve desktop Unified results on stop/release, use the normal
+  desktop output pipeline, and publish Omarchy-compatible recording states.
 
 ## Normal development
 

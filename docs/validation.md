@@ -204,3 +204,49 @@ without any audio upload or additional inference. The journal records one
 10.506-second completed worker and three resumed attachments. The client then
 acknowledged the final to clear the cache. These are single-run loopback timings,
 not phone-network latency measurements. Real Wi-Fi/cellular handoff is untested.
+
+
+## Omarchy desktop regression — 2026-09-23
+
+The desktop journal showed SIGUSR1 starting Unified recording and SIGUSR2
+"disowning" its output session on stop. That legacy incremental-streaming policy
+discarded the final transcript after this fork changed Unified to commit only
+at completion. Omarchy's bar also recognizes `recording`, whereas the streaming
+path wrote `streaming`. Mobile-only tests did not cover the compositor signal
+path, so the earlier desktop-compatibility claim was insufficiently verified.
+
+Daemon commit `b407839` retains Unified's final through stop/release, joins its
+worker, then uses the ordinary desktop result/output pipeline. This restores
+CLI file/clipboard/type overrides, text/profile processing, modifier-release
+handling and file completion results. Public state progresses recording →
+transcribing → idle. Explicit cancel still discards text; mobile sessions still
+use their separate remote result destination and share the same loaded model.
+
+**3 desktop regressions, 38 remote tests and 13 Unified streaming tests passed.**
+Desktop regressions run in isolated child processes so runtime CLI sentinels
+cannot affect the user's daemon. They verify stop retains the final, output
+waits for worker completion, previews never become fallback results, configured
+text processing/file output work, and cancellation joins without insertion.
+
+The release build passed in 2m 48s and replaced the sole daemon at 10:29:58 PDT.
+Rollback: `~/.local/share/voxtype-mobile/backups/20260923-102958-desktop/`.
+PID 2582715 matches the release artifact and loaded Unified once in 2.60 seconds.
+The model/timing profile, Tailscale mount and Omarchy bindings were unchanged.
+
+Live desktop validation used the packaged `/usr/bin/voxtype record toggle`
+(the command behind Omarchy's shortcut), with a temporary PipeWire virtual
+microphone playing the public speech fixture and a per-recording file output.
+Status JSON reported recording; stop progressed recording → transcribing → idle
+and wrote the complete sentence **0.343 seconds after stop**, with no output
+before stop. A subsequent start/cancel returned idle without writing text. The
+original default audio source/sink were restored and the virtual sink removed.
+Initial test harness attempts were cancelled while identifying ALSA's capture
+node (it exposes a node name rather than a process ID). No physical microphone
+audio was used. Actual focused-editor injection and visual bar rendering still
+require user confirmation; the live check verified their command/status contract
+and the restored desktop file-output pipeline.
+
+A subsequent live mobile resumption test on the same daemon retained all
+10.506 seconds of fixture speech across disconnects during recording and after
+finish. Final latency was 0.808 seconds; an unacknowledged final was retrieved
+from cache in under 1 ms locally. No second model or daemon was started.
