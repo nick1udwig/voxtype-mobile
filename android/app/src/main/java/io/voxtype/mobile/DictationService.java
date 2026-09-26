@@ -289,6 +289,8 @@ public class DictationService extends AccessibilityService {
     return new EditorInputMethod(this, this::scheduleRefresh);
   }
 
+  private boolean termaiMicrophone;
+
   private EditorTarget target() {
     // The accessibility overlay or keyboard may be the active window. Resolve the
     // window with application input focus explicitly, never accessibility focus.
@@ -301,6 +303,7 @@ public class DictationService extends AccessibilityService {
       window.recycle();
     }
     if (root == null) root = getRootInActiveWindow();
+    termaiMicrophone = TermaiIntegration.hasMicrophone(root);
     AccessibilityNodeInfo node = root == null ? null : EditorTarget.findFocus(root);
     CharSequence foregroundPackage = root == null ? null : root.getPackageName();
     if (root != null) root.recycle();
@@ -316,7 +319,11 @@ public class DictationService extends AccessibilityService {
     boolean password, visible;
     try (EditorTarget target = target()) {
       password = target.password();
-      visible = !locked() && !password && (target.available() || client != null || touching);
+      visible =
+          !locked()
+              && !password
+              && (!termaiMicrophone || client != null || touching)
+              && (target.available() || client != null || touching);
     }
     if ((password || locked()) && client != null) {
       cancel(null);
