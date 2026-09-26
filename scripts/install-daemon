@@ -1,56 +1,99 @@
 #!/usr/bin/env bash
-# Installs into the existing service: systemd stops the old model owner first.
+# Install one model owner; upgrade the existing service or create a user service.
 set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-$root/artifacts/voxtype-mobile-daemon}
-[[ -x "$binary" ]] || { echo "Build first: scripts/build-daemon" >&2; exit 1; }
+[[ -x "$binary" ]] || { echo 'Build first: scripts/build-daemon' >&2; exit 1; }
+command -v python3 >/dev/null || { echo 'Install Python 3.11 or newer first.' >&2; exit 1; }
 config_dir=${XDG_CONFIG_HOME:-$HOME/.config}
 data_dir=${XDG_DATA_HOME:-$HOME/.local/share}/voxtype-mobile
-# This narrow deployment supports the existing standard service command only.
-command_line=$(systemctl --user show voxtype.service --property=ExecStart --value)
-[[ "$command_line" == *'argv[]=/usr/bin/voxtype daemon ;'* || "$command_line" == *"$data_dir/voxtype daemon"* ]] || { echo "Review custom voxtype.service ExecStart before installing." >&2; exit 1; }
-python3 - "$config_dir/voxtype/config.toml" <<'PY'
+# Unit quoting below supports normal paths including spaces; reject control/specifier expansion.
+if [[ "$data_dir$config_dir" == *'%'* || "$data_dir$config_dir" == *'"'* || "$data_dir$config_dir" == *'\'* || "$data_dir$config_dir" == *'$'* || "$data_dir$config_dir" == *$'\n'* ]]; then
+  echo 'Unsupported character in XDG installation path.' >&2; exit 1
+fi
+systemd=false; existing=false
+if command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1; then
+  systemd=true
+  if [[ $(systemctl --user show voxtype.service --property=LoadState --value) != not-found ]]; then
+    existing=true
+    command_line=$(systemctl --user show voxtype.service --property=ExecStart --value)
+    [[ "$command_line" == *'argv[]=/usr/bin/voxtype daemon ;'* || "$command_line" == *"$data_dir/voxtype daemon"* ]] || { echo 'Review custom voxtype.service ExecStart before installing.' >&2; exit 1; }
+  elif pgrep -x voxtype >/dev/null; then
+    echo 'Stop the existing unmanaged voxtype daemon before creating its service.' >&2; exit 1
+  fi
+fi
+install -d -m 700 "$data_dir" "$config_dir/voxtype"
+config=$config_dir/voxtype/config.toml
+if [[ ! -f "$config" ]]; then
+  (umask 077; cat > "$config" <<'TOML'
+engine = "parakeet"
+state_file = "auto"
+[hotkey]
+enabled = false
+[parakeet]
+model = "parakeet-tdt-0.6b-v3"
+on_demand_loading = false
+streaming = false
+TOML
+  )
+  # Setup only downloads model files. It never launches another model owner.
+  if ! "$binary" setup --download --model parakeet-tdt-0.6b-v3; then
+    rm -f "$config" # A retry must download the missing model again.
+    exit 1
+  fi
+fi
+python3 - "$config" <<'PY'
 import sys,tomllib
 with open(sys.argv[1],'rb') as f: c=tomllib.load(f)
 w=c.get('whisper',{}); p=c.get('parakeet',{})
-assert c.get('engine') == 'parakeet', 'This build/deployment is prepared for the installed Parakeet engine'
+assert c.get('engine') == 'parakeet', 'Configure the Parakeet engine for this build'
 assert not p.get('on_demand_loading',False), 'Disable on-demand loading'
 if p.get('streaming',False):
     assert p.get('model') == 'parakeet-unified-en-0.6b', 'Use the supported Unified streaming model'
 assert not any(w.get(k,False) for k in ['gpu_isolation','eager_processing','secondary_model']), 'Disable GPU isolation, eager processing and secondary models'
 assert not c.get('meeting',{}).get('enabled',False), 'Disable meeting mode'
 PY
-install -d -m 700 "$data_dir"
-# Keep the previous local executable for a failed update rollback.
-if [[ -f "$data_dir/voxtype" ]]; then cp "$data_dir/voxtype" "$data_dir/voxtype.previous"; fi
-# Atomic rename permits updating a previously installed executable.
+backup=$(mktemp -d)
+trap 'rm -rf -- "$backup"' EXIT
+[[ ! -f "$data_dir/voxtype" ]] || cp "$data_dir/voxtype" "$backup/voxtype"
 install -m 755 "$binary" "$data_dir/voxtype.next"
 mv "$data_dir/voxtype.next" "$data_dir/voxtype"
 if [[ ! -f "$data_dir/token" ]]; then
   (umask 077; python3 -c 'import secrets; print(secrets.token_urlsafe(32))' > "$data_dir/token")
 fi
 chmod 600 "$data_dir/token"
-dropin_dir="$config_dir/systemd/user/voxtype.service.d"
-mkdir -p "$dropin_dir"
-previous_dropin=$(mktemp)
-if [[ -f "$dropin_dir/90-mobile.conf" ]]; then cp "$dropin_dir/90-mobile.conf" "$previous_dropin"; fi
+if ! $systemd; then
+  printf 'Installed daemon. No systemd user manager is available. After stopping any existing daemon, run:\n'
+  printf 'VOXTYPE_REMOTE_TOKEN_FILE=%q VOXTYPE_REMOTE_BIND=127.0.0.1:8765 %q daemon\n' "$data_dir/token" "$data_dir/voxtype"
+  exit 0
+fi
+unit_dir=$config_dir/systemd/user
+unit=$unit_dir/voxtype.service
+if $existing; then
+  target=$unit_dir/voxtype.service.d/90-mobile.conf
+else
+  target=$unit
+fi
+mkdir -p "$(dirname -- "$target")"
+[[ ! -f "$target" ]] || cp "$target" "$backup/unit"
+was_active=false
+if systemctl --user is-active --quiet voxtype.service; then was_active=true; fi
 rollback() {
   trap - ERR
-  if [[ -s "$previous_dropin" ]]; then cp "$previous_dropin" "$dropin_dir/90-mobile.conf"; else rm -f "$dropin_dir/90-mobile.conf"; fi
-  if [[ -f "$data_dir/voxtype.previous" ]]; then mv "$data_dir/voxtype.previous" "$data_dir/voxtype"; fi
-  rm -f "$previous_dropin"
+  systemctl --user stop voxtype.service || true
+  if [[ -f "$backup/unit" ]]; then cp "$backup/unit" "$target"; else rm -f "$target"; fi
+  if [[ -f "$backup/voxtype" ]]; then mv "$backup/voxtype" "$data_dir/voxtype"; else rm -f "$data_dir/voxtype"; fi
   systemctl --user daemon-reload
-  systemctl --user restart voxtype.service
-  echo 'Mobile daemon did not become ready. Restored the previous service configuration.' >&2
+  if $was_active; then systemctl --user start voxtype.service; fi
+  echo 'Mobile daemon did not become ready. Restored the previous service and executable.' >&2
 }
 trap rollback ERR
-cat > "$dropin_dir/90-mobile.conf" <<UNIT
-[Service]
-ExecStart=
-ExecStart="$data_dir/voxtype" daemon
-Environment="VOXTYPE_REMOTE_TOKEN_FILE=$data_dir/token"
-Environment=VOXTYPE_REMOTE_BIND=127.0.0.1:8765
-UNIT
+{
+  if ! $existing; then printf '[Unit]\nDescription=Voxtype Mobile dictation daemon\n\n'; fi
+  printf '[Service]\nExecStart=\nExecStart="%s/voxtype" daemon\n' "$data_dir"
+  printf 'Environment="VOXTYPE_REMOTE_TOKEN_FILE=%s/token"\nEnvironment=VOXTYPE_REMOTE_BIND=127.0.0.1:8765\n' "$data_dir"
+  if ! $existing; then printf 'Restart=on-failure\nRestartSec=3\n\n[Install]\nWantedBy=default.target\n'; fi
+} > "$target"
 systemctl --user daemon-reload
 systemctl --user restart voxtype.service
 python3 - "$data_dir/token" <<'PYREADY'
@@ -60,7 +103,7 @@ for _ in range(60):
     try:
         with socket.create_connection(('127.0.0.1',8765),timeout=1) as sock:
             key=base64.b64encode(os.urandom(16)).decode()
-            request=(f'GET /v1/dictate HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {secret}\r\n\r\n')
+            request=(f'GET /v1/capabilities HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {secret}\r\n\r\n')
             sock.sendall(request.encode())
             if sock.recv(4096).startswith(b'HTTP/1.1 101'): break
     except OSError: pass
@@ -68,6 +111,6 @@ for _ in range(60):
 else: raise SystemExit('Mobile API did not become ready in 60 seconds')
 PYREADY
 systemctl --user is-active --quiet voxtype.service
+systemctl --user enable voxtype.service
 trap - ERR
-rm -f "$previous_dropin" "$data_dir/voxtype.previous"
-printf 'Daemon replacement started. Check readiness: journalctl --user -u voxtype -n 40\nPairing token file: %s/token\n' "$data_dir"
+printf 'Installed and enabled voxtype.service. Token file: %s/token\n' "$data_dir"

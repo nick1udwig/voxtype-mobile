@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Run from a checkout, or set VOXTYPE_MOBILE_REPO when downloading this script.
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ ! -f "$root/daemon/Cargo.toml" ]]; then
+  : "${VOXTYPE_MOBILE_REPO:?Set VOXTYPE_MOBILE_REPO to the voxtype-mobile Git repository URL}"
+  command -v git >/dev/null || { echo 'Install git first.' >&2; exit 1; }
+  checkout=${XDG_DATA_HOME:-$HOME/.local/share}/voxtype-mobile/source
+  [[ ! -e "$checkout" ]] || { echo "Use the existing checkout: $checkout/scripts/install" >&2; exit 1; }
+  git clone --recurse-submodules -- "$VOXTYPE_MOBILE_REPO" "$checkout"
+  exec bash "$checkout/scripts/install" "$@"
+fi
+if [[ $# -gt 1 ]]; then echo 'Usage: scripts/install [prebuilt-daemon]' >&2; exit 1; fi
+if [[ $# == 1 ]]; then binary=$1; else
+  "$root/scripts/build-daemon"
+  binary=$root/artifacts/voxtype-mobile-daemon
+fi
+exec bash "$root/scripts/install-daemon" "$binary"

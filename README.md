@@ -195,3 +195,29 @@ acceptance checks. Build results do not imply these have passed.
 - [Android accessibility input connections](https://developer.android.com/reference/android/accessibilityservice/InputMethod.AccessibilityInputConnection)
 - [Android microphone service restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
 - [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)
+
+## Install on a new backend
+
+Run `scripts/install` in a recursive checkout. It builds the pinned daemon and
+installs it for the current user. Build prerequisites are listed above. Pass an
+already-built executable as `scripts/install /path/to/voxtype-mobile-daemon` to
+skip compilation. A new installation downloads the default batch Parakeet model;
+existing configurations and tokens are preserved. An incompatible existing
+configuration is rejected with a correction message.
+
+When a systemd user manager is available, installation creates and enables
+`voxtype.service`, or upgrades the standard existing service via its mobile
+drop-in. Restart stops the previous model owner first. Failed readiness restores
+the previous executable and service. Without systemd it installs the files and
+prints a manual launch command; it does not start a second daemon.
+
+A downloaded copy of `scripts/install` accepts `VOXTYPE_MOBILE_REPO` pointing to
+the published repository and clones its pinned submodules. Termai can use a local
+checkout (`TERMAI_VOXTYPE_SOURCE`) or a published script URL
+(`TERMAI_VOXTYPE_INSTALL_URL`). Termai's Install button only pastes a command.
+
+Termai advertises its available microphone with the accessibility label
+`Termai dictation microphone`. The Android service hides its idle overlay only
+when that actionable control is visible in the focused application window.
+Hidden tabs, unavailable daemons and unrelated pages keep normal Voxtype behavior.
+An already-active Android recording keeps its finish/cancel controls.
