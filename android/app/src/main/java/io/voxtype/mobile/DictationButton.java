@@ -112,8 +112,12 @@ final class DictationButton extends View {
         }
         return true;
       case MotionEvent.ACTION_POINTER_DOWN:
-      case MotionEvent.ACTION_CANCEL:
         cancelTouch();
+        return true;
+      case MotionEvent.ACTION_CANCEL:
+        // Android cancels the pointer when the display locks. The recording
+        // belongs to the dictation session, not the lifetime of this pointer.
+        abandonTouch();
         return true;
       default:
         return true;
@@ -137,6 +141,15 @@ final class DictationButton extends View {
     setPressed(false);
     controller.act(gesture.cancel());
     controller.endTouch(gesture.dragging());
+  }
+
+  void abandonTouch() {
+    if (pointerId == -1) return;
+    boolean moved = gesture.dragging();
+    pointerId = -1;
+    setPressed(false);
+    gesture.abandon();
+    controller.endTouch(moved);
   }
 
   @Override

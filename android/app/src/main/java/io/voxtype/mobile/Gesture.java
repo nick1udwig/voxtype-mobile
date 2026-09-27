@@ -63,4 +63,8 @@ final class Gesture {
     tracking = started = finishOnTap = false;
     return cancel ? Action.CANCEL : Action.NONE;
   }
+
+  void abandon() {
+    tracking = started = finishOnTap = dragging = false;
+  }
 }

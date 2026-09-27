@@ -22,7 +22,9 @@ public class DictationService extends AccessibilityService {
   }
 
   private final Handler main = new Handler(Looper.getMainLooper());
+  private final ScreenLockGate screenLock = new ScreenLockGate();
   private WindowManager wm;
+  private PowerManager power;
   private FrameLayout overlay;
   private LinearLayout controls;
   private DictationButton button;
@@ -43,12 +45,18 @@ public class DictationService extends AccessibilityService {
       };
   private int generation;
   private final Runnable refresh = this::refreshButton;
-  private final BroadcastReceiver screenOff =
+  private final BroadcastReceiver screenEvents =
       new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-          if (button != null) button.cancelTouch();
-          cancel(null);
+          if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())) {
+            screenLock.screenOff();
+            if (button != null) button.abandonTouch();
+          } else if (Intent.ACTION_USER_PRESENT.equals(intent.getAction())
+              || (Intent.ACTION_SCREEN_ON.equals(intent.getAction()) && !locked())) {
+            screenLock.userPresent();
+            main.postDelayed(DictationService.this::deliverAfterUnlock, 300);
+          }
           refreshButton();
         }
       };
@@ -57,6 +65,8 @@ public class DictationService extends AccessibilityService {
   protected void onServiceConnected() {
     current = new java.lang.ref.WeakReference<>(this);
     wm = getSystemService(WindowManager.class);
+    power = getSystemService(PowerManager.class);
+    if (!power.isInteractive()) screenLock.screenOff();
     getSystemService(NotificationManager.class)
         .createNotificationChannel(
             new NotificationChannel("dictation", "Dictation", NotificationManager.IMPORTANCE_LOW));
@@ -139,10 +149,12 @@ public class DictationService extends AccessibilityService {
     params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING;
     // Own the screen-space origin and clamp to system/keyboard insets ourselves.
     if (Build.VERSION.SDK_INT >= 30) params.setFitInsetsTypes(0);
+    IntentFilter screenFilter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
+    screenFilter.addAction(Intent.ACTION_SCREEN_ON);
+    screenFilter.addAction(Intent.ACTION_USER_PRESENT);
     if (Build.VERSION.SDK_INT >= 33)
-      registerReceiver(
-          screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF), Context.RECEIVER_NOT_EXPORTED);
-    else registerReceiver(screenOff, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+      registerReceiver(screenEvents, screenFilter, Context.RECEIVER_NOT_EXPORTED);
+    else registerReceiver(screenEvents, screenFilter);
     refreshButton();
   }
 
@@ -158,7 +170,7 @@ public class DictationService extends AccessibilityService {
       toast("Open Voxtype Mobile and allow microphone access");
       return;
     }
-    if (locked()) return;
+    if (screenBlocked()) return;
     String url = Settings.url(this), token;
     try {
       token = Settings.token(this);
@@ -221,8 +233,11 @@ public class DictationService extends AccessibilityService {
                 public void result(String text) {
                   post(
                       () -> {
-                        if (!text.isEmpty()) deliver(text);
-                        else toast("No speech detected");
+                        if (!text.isEmpty()) {
+                          String ready = screenLock.received(text, locked(), power.isInteractive());
+                          if (ready == null) notifyPendingTranscript();
+                          else deliver(ready);
+                        } else if (!screenBlocked()) toast("No speech detected");
                         cleanup();
                       });
                 }
@@ -264,6 +279,8 @@ public class DictationService extends AccessibilityService {
 
   private void cancel(String message) {
     if (client != null) client.cancel();
+    screenLock.discard();
+    getSystemService(NotificationManager.class).cancel(2);
     cleanup();
     if (message != null) toast(message);
   }
@@ -281,6 +298,34 @@ public class DictationService extends AccessibilityService {
 
   private boolean locked() {
     return getSystemService(KeyguardManager.class).isKeyguardLocked();
+  }
+
+  private boolean screenBlocked() {
+    return screenLock.blocked(locked(), power.isInteractive());
+  }
+
+  private void notifyPendingTranscript() {
+    try {
+      getSystemService(NotificationManager.class)
+          .notify(
+              2,
+              new Notification.Builder(this, "dictation")
+                  .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                  .setContentTitle("Voxtype dictation ready")
+                  .setContentText("Unlock to insert your transcript")
+                  .setAutoCancel(true)
+                  .build());
+    } catch (SecurityException ignored) {
+      // Notification permission is optional; the result stays in memory.
+    }
+  }
+
+  private void deliverAfterUnlock() {
+    if (destroyed) return;
+    String text = screenLock.takePending(locked(), power.isInteractive());
+    if (text == null) return;
+    getSystemService(NotificationManager.class).cancel(2);
+    deliver(text);
   }
 
   @Override
@@ -316,16 +361,17 @@ public class DictationService extends AccessibilityService {
 
   private void refreshButton() {
     if (overlay == null || destroyed) return;
-    boolean password, visible;
-    try (EditorTarget target = target()) {
-      password = target.password();
-      visible =
-          !locked()
-              && !password
-              && (!termaiMicrophone || client != null || touching)
-              && (target.available() || client != null || touching);
+    boolean password = false, visible = false;
+    if (!screenBlocked()) {
+      try (EditorTarget target = target()) {
+        password = target.password();
+        visible =
+            !password
+                && (!termaiMicrophone || client != null || touching)
+                && (target.available() || client != null || touching);
+      }
     }
-    if ((password || locked()) && client != null) {
+    if (password && client != null) {
       cancel(null);
       return;
     }
@@ -464,7 +510,7 @@ public class DictationService extends AccessibilityService {
   @Override
   public void onConfigurationChanged(android.content.res.Configuration config) {
     super.onConfigurationChanged(config);
-    if (button != null) button.cancelTouch();
+    if (button != null) button.abandonTouch();
     refreshButton();
   }
 
@@ -484,6 +530,10 @@ public class DictationService extends AccessibilityService {
 
   @Override
   public void onAccessibilityEvent(AccessibilityEvent event) {
+    // A foreground app event after unlock also recovers if the device did not
+    // deliver ACTION_USER_PRESENT to this bound accessibility service.
+    if (power != null && power.isInteractive() && !locked() && screenLock.userPresent())
+      main.postDelayed(this::deliverAfterUnlock, 300);
     scheduleRefresh();
   }
 
@@ -494,8 +544,10 @@ public class DictationService extends AccessibilityService {
 
   @Override
   public void onInterrupt() {
-    if (button != null) button.cancelTouch();
-    cancel(null);
+    // Accessibility feedback can be interrupted when the keyguard takes focus.
+    // The foreground recording remains under the user's explicit X/finish control.
+    if (button != null) button.abandonTouch();
+    refreshButton();
   }
 
   @Override
@@ -507,7 +559,7 @@ public class DictationService extends AccessibilityService {
     main.removeCallbacksAndMessages(null);
     if (added) wm.removeView(overlay);
     try {
-      unregisterReceiver(screenOff);
+      unregisterReceiver(screenEvents);
     } catch (Exception ignored) {
     }
     current.clear();

@@ -32,7 +32,8 @@ only running Voxtype service. Record Android version and app versions.
 - Hide/show the keyboard, rotate, and disable/re-enable the service after a drag:
   position persists and stays within the safe display area above the keyboard.
   Add a second finger during a press and lock the screen mid-drag: no stuck
-  pressed state, unintended submission, or recording left running after locking.
+  pressed state or unintended submission. Recording should continue through lock
+  if one was active.
 - Test start via TalkBack ACTION_CLICK if used; its activation is toggle mode.
 - Speak immediately on down: beginning is preserved by pre-admission buffering.
 - Insert in the middle of existing text, replace a selection in either direction,
@@ -70,12 +71,25 @@ only running Voxtype service. Record Android version and app versions.
   the pill says **Tap to retry**, and X remains available. Reconnect and tap the
   check; the original recording should insert once without speaking again.
 - With a rejected token, the app should retain audio without repeatedly reconnecting.
-  Correct the saved settings, then tap the check to retry. Locking, entering a
-  password field, pressing X or disabling the service must discard retained audio
-  and prevent scheduled retries or late results from inserting anything.
-- Cancel, lock screen, disable service, deny microphone, wrong token, disconnect
+  Correct the saved settings, then tap the check to retry. Entering an unlocked
+  app password field, pressing X or disabling the service must discard retained
+  audio and prevent scheduled retries or late results from inserting anything.
+- Cancel, disable service, deny microphone, wrong token, disconnect
   Tailscale, stop daemon, slow connection: temporary failures recover as above;
   permanent microphone errors end capture and are surfaced.
+- On 0.1.7, start a tap-mode dictation in an ordinary editor and let the screen
+  time out. Keep speaking while locked for at least 30 seconds; unlock and tap
+  the check. Verify speech before and after lock appears once in the focused
+  editor. Repeat with the power button, and with the lock occurring during a
+  held button press; no keyguard password should cancel the recording.
+- Finish near a lock transition, or reach the five-minute limit while locked.
+  The transcript should remain private until unlock, then insert into the
+  current non-password editor or copy to clipboard if focus is gone. Verify X
+  still cancels after unlock, and app shutdown still discards a pending result.
+  Check the recording indicator/foreground notification while locked, battery
+  use, and that the microphone is not silenced by the OS. A daemon reconnect
+  during lock should still retain speech. GrapheneOS behavior must be checked
+  on the actual Pixel; JVM tests cannot prove background microphone access.
 - Microphone foreground notification and Android privacy indicator appear only
   during the session. The system binds accessibility with foreground capabilities (AOSP Android 15);
   OEM behavior still needs checking for background microphone promotion;

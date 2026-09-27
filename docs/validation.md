@@ -250,3 +250,27 @@ A subsequent live mobile resumption test on the same daemon retained all
 10.506 seconds of fixture speech across disconnects during recording and after
 finish. Final latency was 0.808 seconds; an unacknowledged final was retrieved
 from cache in under 1 ms locally. No second model or daemon was started.
+
+
+## Lock-screen dictation — 2026-09-27
+
+Android 0.1.7 continues an already-started microphone foreground recording
+through screen off and keyguard focus. The service no longer cancels dictation
+on `ACTION_SCREEN_OFF`, on accessibility feedback interruption, or merely
+because the keyguard shows a password field. It hides the overlay while locked
+and abandons a cancelled pointer without discarding the audio session. An
+already-completed transcript waits in memory for unlock, with no transcript text
+in the ready notification. The five-minute cap remains in force.
+
+The app did not need a new inference service or model. Actual GrapheneOS lock
+and background microphone behavior still needs the Pixel checks listed in
+[device-validation.md](device-validation.md).
+
+The 0.1.7 APK (versionCode 8) was built with `scripts/build-android`:
+**65 Android unit tests passed**, Android lint reported **0 errors / 26 warnings**,
+and the APK v2 development signature verified with `apksigner`. New regressions
+cover system touch cancellation preserving capture, completion being withheld
+through screen off and keyguard, one-time delivery after unlock, and explicit
+discard. The daemon and model were unchanged. No Android device was attached over
+ADB, so the foreground microphone and actual editor insertion while locking
+remain device acceptance checks.

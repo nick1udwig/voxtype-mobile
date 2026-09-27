@@ -122,6 +122,19 @@ public class DictationButtonTest {
   }
 
   @Test
+  public void screenLockPointerCancellationPreservesRecording() {
+    touch(MotionEvent.ACTION_DOWN, 0, 100, 100);
+    touch(MotionEvent.ACTION_CANCEL, 100, 100, 100);
+    touch(MotionEvent.ACTION_UP, 1000, 100, 100);
+    assertEquals(List.of(Gesture.Action.START), controller.actions);
+    assertTrue(controller.active);
+    assertEquals(1, controller.ended);
+    touch(MotionEvent.ACTION_DOWN, 1200, 100, 100);
+    touch(MotionEvent.ACTION_UP, 1300, 100, 100);
+    assertEquals(List.of(Gesture.Action.START, Gesture.Action.FINISH), controller.actions);
+  }
+
+  @Test
   public void accessibilityClickStillToggles() {
     button.performClick();
     assertEquals(1, controller.toggles);

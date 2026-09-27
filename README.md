@@ -40,16 +40,18 @@ capture begins on down; the recording is retained in memory until completion or 
 shows microphone activity, a check to finish and an X to cancel. Only the final transcript is inserted at the current
 selection, preserving surrounding text. If no eligible field exists or the app
 cannot edit it, the transcript is copied to the clipboard. Clipboard dictation
-can also be started from the settings app. Locking or entering a password field
-cancels recording.
+can also be started from the settings app. Recording continues through screen
+lock with the existing microphone foreground notification. Unlock to finish. If
+a result completes while locked, text is held in memory and inserted into the
+current eligible editor after unlock, or copied to the clipboard when no editor
+is available. Entering a password field in an unlocked app cancels recording.
 
 Temporary transport, busy-daemon and transcription errors reconnect automatically
 and resume accepted audio with backoff and at most eight retries. Daemon restart,
 expired sessions or inference errors replay retained audio. Full queues
 wait for capacity. If recovery still fails, capture stops and **Tap to retry**
 keeps the recording available; X discards it. The hard limit is five minutes
-(9.6 MB PCM), held only in process memory. Closing the service, locking the phone
-or entering a password field discards it. Only one final transcript is inserted;
+(9.6 MB PCM), held only in process memory. Closing the service or entering a password field in an unlocked app discards it. Only one final transcript is inserted;
 retries cannot insert stale results or partial previews. See
 [connection and recovery](docs/protocol.md).
 

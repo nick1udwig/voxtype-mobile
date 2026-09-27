@@ -30,7 +30,7 @@ No model is loaded by the transport and no transcript is stored on disk.
 
 After the retry budget is exhausted, capture stops and the control offers
 **Tap to retry**. The recording remains in memory; a manual retry reads the
-current saved address/token. X, locking, entering a password field, service
+current saved address/token. X, entering an app password field, service
 shutdown, or process termination discards it. Nothing is written to disk.
 Authentication/protocol errors require manual recovery and do not loop.
 
@@ -38,3 +38,24 @@ Only the current connection can deliver a final transcript, and only once per
 user dictation. Late callbacks and previews cannot insert text. There is no
 cross-process durability guarantee; Android killing the app loses retained audio.
 Permanent microphone, network, model, or device failures cannot be made infallible.
+
+## Screen lock during dictation
+
+Android 0.1.7 keeps the existing microphone foreground service and audio capture
+running when the display turns off or the keyguard takes focus. The accessibility
+overlay hides while locked and returns after unlock. A system-cancelled touch is
+abandoned without cancelling the dictation. Unlock to use the floating check/X
+again. The normal five-minute recording limit still applies.
+
+A final transcript received while locked stays only in process memory and is
+delivered after unlock, using the current editor or clipboard fallback. A short
+notification can say that a result is ready, without including transcript text.
+Disabling the accessibility service or terminating the process still discards
+recording and any pending result. Password fields in an unlocked app still cancel
+recording; the keyguard's password field does not.
+
+Android documents microphone foreground services as the mechanism for continued
+background microphone access. The screen-on flag is supported in an Activity,
+not this accessibility-service overlay, and would drain display power. See
+[foreground microphone restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
+and [screen-on guidance](https://developer.android.com/develop/background-work/background-tasks/awake/screen-on).
