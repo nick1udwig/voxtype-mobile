@@ -81,4 +81,5 @@ transport. No test initializes a real recognition model.
 
 See [validation.md](validation.md) for build and live deployment results and
 [device-validation.md](device-validation.md) for phone-specific checks. Existing
-Android APKs support the streaming protocol; no client update is needed.
+Android 0.1.9 requires the coordinated Opus protocol 2 daemon upgrade;
+older PCM/zlib APKs and integrations must be upgraded too.

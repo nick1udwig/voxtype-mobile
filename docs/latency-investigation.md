@@ -72,13 +72,16 @@ Original local measurements are in ignored `artifacts/latency/`. The initial CPU
 comparison predates the explicit capture-clock field; its sub-millisecond local
 upload lag does not materially affect the numbers above.
 
-## Experiment 2: lossless audio compression
+## Experiment 2: lossless audio compression (historical)
 
-Android 0.1.8 negotiates independent zlib frames with the daemon, retaining raw
+Current Android 0.1.9 uses Opus-only protocol 2. The raw/zlib scripts below
+require the old daemon API; current timing uses `scripts/benchmark-latency.py`.
+
+This historical protocol 1 experiment used Android 0.1.8 to negotiate independent zlib frames with the daemon, retaining raw
 PCM if the server does not acknowledge support. A frame that does not compress
 uses a raw envelope. Decoding restores every PCM sample exactly; model input,
 sample rate, inference settings and resume offsets remain unchanged. See the
-[wire protocol](../daemon/docs/remote-api.md#optional-lossless-pcm-transport).
+[wire protocol](../daemon/docs/remote-api.md).
 
 The tested release build temporarily replaced the existing service binary.
 Systemd stopped the original daemon before starting the candidate, and all

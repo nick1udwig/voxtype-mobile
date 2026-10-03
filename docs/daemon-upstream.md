@@ -39,6 +39,13 @@ sources are included in the fork. The upstream MIT license remains intact.
   the sole daemon; see [latency measurements](latency-investigation.md).
   This commit is local and must be published before publishing the parent pin.
 
+- `4b2cc65`: require Opus-only mobile protocol 2 and complete-frame resumption;
+  each logical session owns its libopus decoder, and stale/duplicate frames are
+  checked before native decoding. Raw PCM/zlib wire modes and legacy sessions
+  are removed. Includes strict framing/duration bounds and a real codec golden
+  fixture shared with Android tests. System libopus is a runtime dependency.
+  This commit is local and must be published before publishing the parent pin.
+
 ## Normal development
 
 ```bash

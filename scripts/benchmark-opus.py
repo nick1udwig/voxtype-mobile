@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Compare raw, PCM+zlib, Opus, and forced Opus+zlib on the existing model.
+"""Historical protocol 1 experiment: requires the old daemon API.
+Current production timing uses scripts/benchmark-latency.py (Opus protocol 2).
+
+Compare raw, PCM+zlib, Opus, and forced Opus+zlib on the existing model.
 
 All modes traverse the same bounded packetized bottleneck and benchmark-only
 codec adapter. The adapter decodes *after* shaped delivery, then forwards PCM

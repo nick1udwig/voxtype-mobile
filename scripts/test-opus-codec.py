@@ -135,7 +135,7 @@ class OpusTests(unittest.TestCase):
         finally:
             decoder.close()
 
-    def test_pcm_zlib_matches_accepted_encoding(self):
+    def test_historical_pcm_zlib_reference_envelope(self):
         for pcm in (bytes.fromhex("0080ff7f00000100") * 8, bytes(3200),
                     bytes(range(256)) * 12):
             accepted, _, _ = benchmark.transport.encoded_frame(pcm)

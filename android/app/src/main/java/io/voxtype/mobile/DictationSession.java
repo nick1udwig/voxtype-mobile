@@ -36,7 +36,7 @@ final class DictationSession extends WebSocketListener {
           TIMER.schedule(work, millis, TimeUnit.MILLISECONDS);
         }
       };
-  static final int MAX_BYTES = 300 * 32000;
+  static final int MAX_BYTES = OpusFrames.MAX_BYTES;
   private final DictationClient.Listener listener;
   private final WebSocket.Factory factory;
   private final Scheduler scheduler;
@@ -44,8 +44,8 @@ final class DictationSession extends WebSocketListener {
   private Request request;
   private WebSocket socket;
   private int bytes, nextFrame, retries;
-  private int frameOffset, sentBytes;
-  private boolean resumable, lossless;
+  private int samples;
+  private boolean cancelled;
   private String sessionId = newSessionId();
 
   private static String newSessionId() {
@@ -80,10 +80,8 @@ final class DictationSession extends WebSocketListener {
   private void connect() {
     if (done || paused) return;
     ready = finishSent = false;
-    lossless = false; // Negotiation belongs to this connection, including after a server restart.
     lastPartial = "";
     nextFrame = 0;
-    frameOffset = sentBytes = 0;
     deadline = scheduler.now() + 15000;
     long id = ++generation;
     try {
@@ -92,7 +90,8 @@ final class DictationSession extends WebSocketListener {
               request
                   .newBuilder()
                   .header("X-Voxtype-Session", sessionId)
-                  .header("X-Voxtype-Audio", LosslessPcm.ENCODING)
+                  .header("X-Voxtype-Protocol", "2")
+                  .header("X-Voxtype-Audio", OpusFrames.ENCODING)
                   .build(),
               this);
       state(finished ? "Transcribing… reconnecting" : "Connecting…");
@@ -114,15 +113,21 @@ final class DictationSession extends WebSocketListener {
     return bytes;
   }
 
-  synchronized void audio(byte[] chunk) {
+  synchronized boolean isCancelled() {
+    return cancelled || done;
+  }
+
+  synchronized void captured(int count) {
+    samples += count;
+  }
+
+  synchronized void audio(ByteString frame) {
     if (done) return;
     if (finished) throw new IllegalStateException("Audio after capture ended");
-    if (bytes + chunk.length > MAX_BYTES) {
-      pause("Recording limit reached. Tap the check to retry the saved audio.");
-      return;
-    }
-    audio.add(ByteString.of(chunk));
-    bytes += chunk.length;
+    if (bytes + frame.size() > MAX_BYTES || audio.size() >= OpusFrames.MAX_FRAMES)
+      throw new IllegalStateException("Encoded recording limit reached");
+    audio.add(frame);
+    bytes += frame.size();
   }
 
   synchronized void finish() {
@@ -151,7 +156,7 @@ final class DictationSession extends WebSocketListener {
 
   synchronized void cancel() {
     if (done) return;
-    done = true;
+    cancelled = done = true;
     ++generation;
     ready = false;
     WebSocket old = socket;
@@ -195,26 +200,13 @@ final class DictationSession extends WebSocketListener {
       // Pace replay in small bursts and let TCP backpressure slow uploads without losing audio.
       int sent = 0;
       while (nextFrame < audio.size() && socket.queueSize() < 64000 && sent < 16000) {
-        ByteString payload =
-            audio
-                .get(nextFrame)
-                .substring(
-                    frameOffset,
-                    Math.min(audio.get(nextFrame).size(), frameOffset + LosslessPcm.MAX_PCM_BYTES));
-        ByteString body = lossless ? LosslessPcm.encode(payload) : payload;
-        ByteString frame =
-            resumable ? new okio.Buffer().writeLong(sentBytes).write(body).readByteString() : body;
+        ByteString frame = audio.get(nextFrame);
         if (!socket.send(frame)) {
           recover("Audio connection interrupted", true);
           return;
         }
-        frameOffset += payload.size();
-        if (frameOffset == audio.get(nextFrame).size()) {
-          ++nextFrame;
-          frameOffset = 0;
-        }
-        sentBytes += payload.size();
-        sent += payload.size();
+        ++nextFrame;
+        sent += frame.size();
         lastProgress = now;
       }
       // WebSocket messages are FIFO. Queue finish immediately behind the last
@@ -275,43 +267,36 @@ final class DictationSession extends WebSocketListener {
         case "ready":
           int seconds = event.getInt("max_seconds");
           if (ready
-              || event.getInt("protocol") != 1
+              || event.getInt("protocol") != 2
               || event.getInt("sample_rate") != 16000
               || event.getInt("channels") != 1
-              || !event.getString("format").equals("pcm_s16le")
+              || !event.getString("format").equals("opus")
               || seconds < 1
               || seconds > 300) {
-            recover("Unsupported server protocol", false);
+            recover("Upgrade the Voxtype app and daemon together: Opus protocol 2 required", false);
             return;
           }
-          if (bytes > seconds * 32000L) {
+          if (samples > seconds * 16000L) {
             recover("Server recording limit is shorter than the saved audio", false);
             return;
           }
           maxSeconds = seconds;
-          String encoding = event.optString("audio_encoding", "pcm_s16le");
-          if (!encoding.equals("pcm_s16le") && !encoding.equals(LosslessPcm.ENCODING)) {
-            recover("Unsupported server audio encoding", false);
+          if (!event.getString("audio_encoding").equals(OpusFrames.ENCODING)
+              || !event.getBoolean("resume")
+              || !event.getString("framing").equals("sequence_opus_v1")
+              || event.getInt("max_encoded_bytes") != MAX_BYTES) {
+            recover("Upgrade the Voxtype daemon and app together: Opus protocol 2 required", false);
             return;
           }
-          lossless = encoding.equals(LosslessPcm.ENCODING);
-          resumable = event.optBoolean("resume", false);
-          long accepted = resumable ? event.getLong("accepted_bytes") : 0;
-          boolean serverFinished = resumable && event.getBoolean("finished");
+          long accepted = event.getLong("accepted_frames");
+          boolean serverFinished = event.getBoolean("finished");
           if (accepted < 0
-              || accepted > bytes
-              || accepted % 2 != 0
-              || (resumable && !event.getString("framing").equals("offset_pcm_s16le"))
-              || (serverFinished && (!finished || accepted != bytes))) {
+              || accepted > audio.size()
+              || (serverFinished && (!finished || accepted != audio.size()))) {
             recover("Invalid resume checkpoint", false);
             return;
           }
-          sentBytes = (int) accepted;
-          frameOffset = sentBytes;
-          nextFrame = 0;
-          while (nextFrame < audio.size() && frameOffset >= audio.get(nextFrame).size()) {
-            frameOffset -= audio.get(nextFrame++).size();
-          }
+          nextFrame = (int) accepted;
           finishSent = serverFinished;
           if (serverFinished) deadline = scheduler.now() + 180000;
           ready = true;
@@ -340,7 +325,7 @@ final class DictationSession extends WebSocketListener {
           audio.clear();
           bytes = 0;
           listener.result(result); // Exactly once for this user dictation, across all attempts.
-          if (resumable) ws.send("{\"type\":\"ack\"}");
+          ws.send("{\"type\":\"ack\"}");
           ws.close(1000, "done");
           break;
         case "error":
@@ -368,9 +353,13 @@ final class DictationSession extends WebSocketListener {
   public synchronized void onFailure(WebSocket ws, Throwable error, Response response) {
     if (done || paused || ws != socket) return;
     int code = response == null ? 0 : response.code();
-    boolean permanent = code == 401 || code == 403 || code == 404;
+    boolean permanent = code == 400 || code == 401 || code == 403 || code == 404 || code == 426;
     recover(
-        code == 401 || code == 403 ? "Pairing token rejected" : "Connection lost (" + code + ")",
+        code == 401 || code == 403
+            ? "Pairing token rejected"
+            : code == 426
+                ? "Upgrade the Voxtype app and daemon together: Opus protocol 2 required"
+                : "Connection lost (" + code + ")",
         !permanent);
   }
 

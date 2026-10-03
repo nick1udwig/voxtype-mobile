@@ -54,9 +54,9 @@ only running Voxtype service. Record Android version and app versions.
   a decoder backlog must not cut off the beginning or end of speech.
 - On 0.1.4 or later, disconnect/reconnect Tailscale while speaking and again after tapping
   finish. Reconnection should preserve all retained speech and insert one complete
-  result, including speech captured while offline. On 0.1.6, brief reconnects
+  result, including speech captured while offline. On 0.1.9, brief reconnects
   should resume without replaying accepted audio: logs show `resumed=true` and
-  an increasing `accepted_bytes`, with one worker completion. Try a brief desktop
+  an increasing `accepted_frames`, with one worker completion. Try a brief desktop
   busy period.
 - On 0.1.6, interrupt Wi-Fi/cellular/Tailscale after finish and reconnect within
   90 seconds of completion. The same final should insert once without another
@@ -64,18 +64,29 @@ only running Voxtype service. Record Android version and app versions.
   audio should replay successfully. Cancel while connecting and during upload;
   a new dictation must become available once prior inference joins. Cancel while
   offline: no late result may insert; the abandoned session eventually expires.
-- On 0.1.8, verify the upgraded daemon acknowledges `audio_encoding:
-  pcm_s16le_zlib_v1` and dictations retain their first/last words and punctuation.
-  Compare release delay for the same 10-, 30- and 60-second speech on sufficient
-  and poor uplinks, including speech with silence and noisy audio. Capture only
-  timing/counter metadata; JVM tests and shaped localhost fixtures do not validate
-  phone CPU cost, cellular latency or battery use.
-- On 0.1.8, test the APK with an older daemon that omits `audio_encoding`; it
-  must upload raw PCM and deliver one complete final. Reconnect during compressed
-  upload and after finish: the checkpoint must count decoded PCM bytes and the
-  retained suffix must resume without repeating or dropping speech. Include a
-  daemon restart/downgrade between connections, which must negotiate again and
-  safely replay/resume raw PCM. X must cancel without late insertion.
+- On 0.1.9, confirm protocol 2, `audio_encoding: opus_v1` and frame checkpoints.
+  This release has build/fake-codec tests and real-libopus fixture checks, but
+  no connected phone/emulator was available for MediaCodec or accessibility
+  validation. Run these checks before deploying the coordinated app/daemon upgrade.
+- Start speaking immediately and finish while speaking; first/last words must
+  survive. Include short taps released during codec startup, long speech, silence
+  and the five-minute boundary.
+  With a codec-only on-device fixture harness, also exercise exact source
+  durations 1/10/19 ms and 95/100/101 ms and verify exact restored sample counts.
+  Check real MediaCodec config/delay, delayed packets, empty EOS, prompt EOS
+  completion and codec release on cancellation. Log metadata only.
+- Test new app against old daemon: it must retain audio, report coordinated
+  upgrade required, upload no PCM and avoid automatic version-error retries.
+  Old clients against new daemon must receive HTTP 426 before model admission.
+- Disconnect during Opus upload and after finish. Within session retention,
+  resume from whole accepted frames with the same stateful decoder and one
+  inference pass. After daemon restart/cache expiry, replay original encoded
+  frame 0 including pre-skip. Include source captured offline and exactly one
+  insertion after recovery. X cancels without late insertion or error popup.
+- Compare 10-, 30- and 60-second speech at sufficient and poor uplinks; record
+  release delay, encoded bytes, phone CPU/battery and loss of first/last words.
+  Earlier VOIP/libopus host measurements do not measure Android's platform
+  APPLICATION_AUDIO/constrained VBR codec or cellular behavior.
 - Leave an unfinished recording disconnected for over 30 seconds, then retry.
   Verify full replay after expiry, without losing offline speech. After successful
   delivery, inspect metadata logs for one model load across repeated reconnects.

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Bounded benchmark-only Opus packets; no model, file container, or resumption.
+"""Bounded host Opus codec helpers; no model or file container.
+
+Encoder is reused by the current protocol2 latency benchmark. The aggregate
+helpers below retain the historical experiment envelope (16k pre-skip units),
+not the production frame sequence/48k pre-skip envelope.
 
 Aggregate envelope: version u8, flags u8 (first=1,last=2), pre-skip u16,
 final original sample count u32, packet count u8; each packet has a u16 length.

@@ -6,13 +6,16 @@ android {
         applicationId 'io.voxtype.mobile'
         minSdk 29
         targetSdk 35
-        versionCode 9
-        versionName '0.1.8'
+        versionCode 10
+        versionName '0.1.9'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     buildTypes { release { minifyEnabled false } }
-    testOptions { unitTests.includeAndroidResources = true }
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.all { systemProperty "voxtype.opusFixture", rootProject.file("../daemon/tests/fixtures/remote/opus-v1.bin").absolutePath }
+    }
 }
 dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'

@@ -51,7 +51,7 @@ and resume accepted audio with backoff and at most eight retries. Daemon restart
 expired sessions or inference errors replay retained audio. Full queues
 wait for capacity. If recovery still fails, capture stops and **Tap to retry**
 keeps the recording available; X discards it. The hard limit is five minutes
-(9.6 MB PCM), held only in process memory. Closing the service or entering a password field in an unlocked app discards it. Only one final transcript is inserted;
+(at most 2 MiB of encoded Opus), held only in process memory. Closing the service or entering a password field in an unlocked app discards it. Only one final transcript is inserted;
 retries cannot insert stale results or partial previews. See
 [connection and recovery](docs/protocol.md).
 
@@ -102,6 +102,9 @@ phone; arbitrary custom editors may require clipboard fallback.
 Install Rust, C/C++ tools, CMake, libclang and ALSA development headers for the
 daemon. For Android, install JDK 17 and Android SDK platform/build tools 35.
 The build scripts also detect tools staged locally under `.toolchains/`.
+The mobile daemon needs system libopus at runtime (`opus` on Arch, `libopus0`
+on Debian/Ubuntu). Android 0.1.9 and the daemon require coordinated upgrades to
+Opus protocol 2; older PCM/zlib clients and servers are incompatible.
 
 ```sh
 scripts/build-daemon
@@ -176,12 +179,12 @@ tailscale serve --https=443 --set-path=/voxtype off
 
 ```sh
 cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::
-android/gradlew -p android :app:testDebugUnitTest :app:lintDebug
+scripts/build-android
 ```
 
 Rust tests use a fake transcriber to check shared instance reuse, serialized
-preview/final inference, cancellation draining, audio limits, PCM decoding and
-an authenticated real WebSocket exchange. They load no model. Android unit tests
+preview/final inference, cancellation draining, audio limits, Opus frame decoding,
+exact sample trimming and an authenticated real WebSocket exchange. They load no model. Android unit tests
 cover editor routing, stale focus, accessibility paste, selection replacement,
 emoji offsets, password input variations, gestures and measured audio levels.
 Parakeet streaming regression tests run with

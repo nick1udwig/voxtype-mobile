@@ -1,5 +1,9 @@
 # Opus transport experiment — 2026-10-03
 
+This is a historical protocol 1 experiment. Production Android 0.1.9 now uses
+Opus-only protocol 2; use `scripts/benchmark-latency.py` for current direct
+protocol timing. Historical adapter/raw/zlib trials require the old daemon API.
+
 The earlier Opus result was only an offline file-size check. This experiment
 compares live encoding and transcription with four transports: raw PCM, the
 accepted PCM+zlib format, Opus, and Opus followed by zlib compression.
@@ -205,13 +209,9 @@ Retain the reproducible benchmark and results. **Standalone Opus merits a
 production implementation experiment**: it materially improved the weakest
 link without a human-reference regression in this small check. **Reject the
 additional zlib stage**: it increased bytes and showed no consistent latency
-benefit. Keep the accepted lossless production transport until the remaining
-Opus integration checks are satisfied.
-
-Even a successful benchmark is not a complete production change. Opus packets
-depend on decoder state, unlike the independent lossless PCM frames already
-implemented. Production work needs negotiated fallback, a retained decoder and
-packet checkpoint design across reconnects, bounded replay after restart,
-Android encoder lifecycle/flush handling, and the real-phone acceptance checks.
-The [Opus API documentation](https://opus-codec.org/docs/opus_api-1.6.pdf) describes
-the stateful packet decoding and encoder lookahead used in this experiment.
+benefit. Production has since moved to Opus-only protocol 2, with mandatory version/session
+headers, a session-owned decoder, complete-frame checkpoints and full encoded
+replay. See [protocol](protocol.md). The old experiment remains reproducible
+against protocol 1 for historical comparison, without being a supported client
+path. Android MediaCodec and real-phone checks remain unvalidated in this
+workspace; the host benchmark used different codec application/VBR settings.

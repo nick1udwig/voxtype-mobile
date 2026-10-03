@@ -274,3 +274,62 @@ through screen off and keyguard, one-time delivery after unlock, and explicit
 discard. The daemon and model were unchanged. No Android device was attached over
 ADB, so the foreground microphone and actual editor insertion while locking
 remain device acceptance checks.
+
+
+## Opus-only implementation — 2026-10-03
+
+Android 0.1.9 (versionCode 10) and daemon commit `4b2cc65` require mobile
+protocol 2 with `opus_v1`. Raw PCM/zlib wire paths and compatibility fallback
+are removed. The `/v1/dictate` route remains stable for existing proxy mounts.
+These are local build and fake-model results; the installed app and running
+sole daemon/model owner were not changed or launched by this work.
+
+Validation completed:
+
+- `scripts/build-android`: APK assembly, 70 JVM tests and lint passed, with
+  zero failures, errors or skipped tests. The 27 transport/codec tests include
+  17 session recovery cases, seven encoder/framing cases and three bounded
+  capture startup/cancellation/saturation cases. Remaining tests cover existing
+  editor, gesture, screen-lock and accessibility behavior.
+- Required `cargo test --manifest-path daemon/Cargo.toml --locked --features
+  parakeet --lib remote::`: 47 passed. Fake-model WebSocket/actor checks cover
+  busy/cancel ownership, backpressure, cached-final replay/ack, expiry, stale
+  socket epochs, sequence gaps, duplicates, invalid frames, duration bounds and
+  full original replay. No real model is loaded.
+- Focused `parakeet_streaming`: 13 passed; `unified_desktop`: four passed.
+- `scripts/build-daemon`: locked release build passed. The built binary was
+  copied to artifacts and was never launched alongside the installed daemon.
+- Python current Opus benchmark fake-backend check: one test passed (four
+  exact-duration subcases). Codec-only reference checks: nine passed;
+  historical fake adapter checks: two passed; fake installer checks: five passed.
+- Rust formatting, shell syntax and Git whitespace checks passed.
+
+The synthetic real-libopus golden fixture contains a 440 Hz tone beginning
+immediately and ending at original sample 1601. Rust checks exact sample count,
+first/tail energy and pre-skip alignment; its actor output matches uninterrupted
+native decoding after reconnect, a corrupted duplicate and a stale socket.
+Android reconstructs identical production wire frames from that fixture.
+Fake codec lifecycle tests cover source lengths 1 sample and 95/100/101 ms,
+empty and packet EOS, split PCM content and zero padding, actual delay config,
+missing EOS, input stall and cancellation. Delayed codec initialization preserves
+already-captured short audio; a full eight-chunk live PCM handoff fails explicitly
+instead of blocking microphone reads and silently dropping samples.
+
+Built artifacts (local, ignored):
+
+- `artifacts/voxtype-mobile-debug.apk`, SHA-256
+  `6ad791e7f24527015318ed7b280b364ae2a778d1be21e60cead282579f81caa7`.
+- `artifacts/voxtype-mobile-daemon`, SHA-256
+  `fafb7405be62136782db726605bf6a23cceee6cacc87708e79ccebcc0683b935`.
+
+No connected Android device or emulator was available. Actual MediaCodec/OEM
+config, latency, microphone behavior, accessibility insertion, cellular recovery
+and battery use remain unvalidated. Follow `docs/device-validation.md` on the
+phone before deploying the coordinated upgrade. The earlier host VOIP Opus
+benchmarks use different application/VBR choices from Android's AOSP C2 encoder;
+their latency/size numbers do not establish phone performance.
+
+The current `scripts/benchmark-latency.py` uses direct Opus protocol 2.
+The raw/zlib/Opus+zlib comparative scripts remain explicitly historical and
+require the removed protocol 1 API. The fork commit remains unpublished;
+publish it before publishing any parent pin that references it.

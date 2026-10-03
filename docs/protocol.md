@@ -7,13 +7,25 @@ The Android endpoint is `wss://HOST/voxtype/v1/dictate`. Tailscale Serve uses th
 existing HTTPS port 443, strips `/voxtype`, and forwards to the sole daemon at
 `127.0.0.1:8765`. The pairing token is sent as an Authorization header.
 
-Android retains PCM in memory until one final result is delivered or the user
-cancels. The hard cap is five minutes (9.6 MB of PCM). Temporary connection,
-admission, and transcription failures trigger up to eight automatic retries,
-backing off from 0.5 to 8 seconds. Version 0.1.6 sends a random session ID and
-resumes from the daemon's accepted PCM-byte checkpoint. Already accepted audio
-is not uploaded or decoded again. Speech captured while reconnecting is retained
-too. Upload is paced and bounded; backpressure delays it without discarding audio.
+Android 0.1.9 requires mobile protocol 2 and `opus_v1`; upgrade the app and
+forked daemon together. Older raw PCM/PCM+zlib wire modes and fallback have been
+removed. Unsupported clients fail with HTTP 426 before admission, and the new
+app rejects old ready events without uploading or automatically retrying.
+
+The microphone remains 16 kHz mono PCM internally, encoded during capture by
+Android MediaCodec Opus at target 24 kbit/s. Android retains the original encoded
+frames in memory until final delivery or discard, bounded to five minutes and
+2 MiB. Complete frame sequences resume from `accepted_frames`; the daemon keeps
+one stateful Opus decoder with the logical session across reconnects. Duplicates
+are ignored before decoding and the decoder never resets for a retained suffix.
+Codec pre-skip and final original sample count preserve the beginning and tail;
+A bounded eight-chunk internal PCM handoff lets capture start before encoder
+initialization and preserves short recordings released during codec startup.
+If the encoder cannot keep up and this bounded handoff fills, recording fails
+explicitly so lost microphone samples cannot become a successful transcript.
+EOS is fully drained before finish. No PCM/zlib is sent on the mobile wire.
+Temporary connection, busy and inference errors retry at most eight times,
+backing off from 0.5 to 8 seconds; bounded paced upload retains offline speech.
 
 An unfinished disconnected session stays available for 30 seconds (two seconds
 if it has no audio). Once finish is accepted, inference can complete offline within
@@ -25,7 +37,8 @@ broken network can delay cancellation until expiry. A new dictation abandons a
 disconnected unfinished predecessor.
 
 Daemon restart, cache expiry, or an inference error requires full replay through
-the existing model. Older daemons negotiate legacy raw PCM and full replay.
+the existing model. Replay restarts from encoded frame 0 with its original codec pre-skip.
+Old daemons require a coordinated upgrade; no compatibility fallback is used.
 No model is loaded by the transport and no transcript is stored on disk.
 
 After the retry budget is exhausted, capture stops and the control offers

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Paced fixture timing against the existing daemon; no model or transcript storage.
+"""Paced Opus protocol 2 timing against the existing daemon; no model or transcript storage.
 
 Example (requires access to the host daemon and token):
     scripts/benchmark-latency.py --runs 3 --output artifacts/latency.json
@@ -12,6 +12,7 @@ and have an independent deadline. This script never changes service priority.
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import multiprocessing
 import os
@@ -29,9 +30,9 @@ class BenchmarkError(Exception):
 
 
 class WebSocket:
-    """Small RFC 6455 client for the daemon's bounded JSON/PCM protocol."""
+    """Bounded RFC 6455 helper; legacy callers are historical experiments only."""
 
-    def __init__(self, token, resumable, port=8765, audio_encoding=None):
+    def __init__(self, token, resumable, port=8765, audio_encoding=None, protocol=None):
         self.sock = socket.create_connection(("127.0.0.1", port), timeout=10)
         self.sock.settimeout(1)
         self.write_lock = threading.Lock()
@@ -45,6 +46,8 @@ class WebSocket:
         ]
         if resumable:
             headers.append(f"X-Voxtype-Session: {uuid.uuid4().hex}")
+        if protocol is not None:
+            headers.append(f"X-Voxtype-Protocol: {protocol}")
         if audio_encoding is not None:
             headers.append(f"X-Voxtype-Audio: {audio_encoding}")
         upgrade = ("\r\n".join(headers) + "\r\n\r\n").encode("ascii")
@@ -157,25 +160,28 @@ def load_fixture(path, repeats, gap_seconds):
     return audio
 
 
-def trial(token, audio, frame_ms, timeout, resumable):
+def trial(token, audio, timeout):
     opened = time.monotonic()
-    ws = WebSocket(token, resumable)
+    ws = WebSocket(token, True, audio_encoding="opus_v1", protocol=2)
     done = threading.Event()
     result = {"pcm_bytes": len(audio), "audio_seconds": len(audio) / 32_000}
     reader_error = []
     timeline = {}
     thread = None
     completed = False
+    encoder = None
     try:
         ready = ws.receive(opened + 10)
         if ready.get("type") != "ready":
             raise BenchmarkError("daemon did not admit benchmark session (may be busy)")
-        if (ready.get("sample_rate"), ready.get("channels"), ready.get("format")) != (16_000, 1, "pcm_s16le"):
+        if (ready.get("sample_rate"), ready.get("channels"), ready.get("format")) != (16_000, 1, "opus"):
             raise BenchmarkError("daemon advertised incompatible audio format")
-        use_offsets = bool(ready.get("resume"))
-        if ready.get("accepted_bytes", 0) != 0 or ready.get("finished", False):
+        if (ready.get("protocol"), ready.get("audio_encoding"), ready.get("framing"), ready.get("resume")) != (2,"opus_v1","sequence_opus_v1",True):
+            raise BenchmarkError("upgrade app and daemon together: Opus protocol 2 required")
+        if ready.get("accepted_frames") != 0 or ready.get("finished", False):
             raise BenchmarkError("fresh benchmark session unexpectedly resumed")
-        result["resumable"] = use_offsets
+        result["protocol"] = 2
+        result["audio_encoding"] = "opus_v1"
         result["preview"] = ready.get("preview")
         result["admission_seconds"] = time.monotonic() - opened
         start = time.monotonic()
@@ -207,28 +213,39 @@ def trial(token, audio, frame_ms, timeout, resumable):
 
         thread = threading.Thread(target=consume, name="benchmark-events", daemon=True)
         thread.start()
-        frame_bytes = round(frame_ms * 32)
+        spec = importlib.util.spec_from_file_location("mobile_opus", Path(__file__).with_name("opus-codec.py"))
+        codec = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(codec)
+        encoder = codec.Encoder()
+        packets, sequence, audio_bytes = [], 0, 0
+        def upload(last):
+            nonlocal sequence, audio_bytes
+            frame = struct.pack("!QBBHIB",sequence,1,(1 if sequence==0 else 0)|(2 if last else 0),
+                encoder.lookahead*3 if sequence==0 else 0,len(audio)//2 if last else 0,len(packets))
+            frame += b"".join(struct.pack("!H",len(packet))+packet for packet in packets)
+            ws.send(2,frame);audio_bytes += len(frame);sequence += 1;packets.clear()
         lag = 0.0
-        for offset in range(0, len(audio), frame_bytes):
-            if done.is_set():
-                raise BenchmarkError("daemon ended session before finish")
-            frame = audio[offset:offset + frame_bytes]
-            # Wait until the whole frame would have been captured on the phone.
-            due = start + (offset + len(frame)) / 32_000
-            remaining = due - time.monotonic()
-            if remaining > 0:
-                time.sleep(remaining)
-            lag = max(lag, time.monotonic() - due)
-            ws.send(2, struct.pack("!Q", offset) + frame if use_offsets else frame)
-            lag = max(lag, time.monotonic() - due)
+        padded_samples = ((len(audio)//2 + encoder.lookahead + 319)//320)*320
+        for offset in range(0,padded_samples*2,640):
+            if done.is_set(): raise BenchmarkError("daemon ended session before finish")
+            captured = min(offset+640,len(audio))
+            due = start + captured / 32000
+            remaining = due-time.monotonic()
+            if remaining>0: time.sleep(remaining)
+            lag=max(lag,time.monotonic()-due)
+            pcm=audio[offset:offset+640]
+            if len(packets)==5: upload(False)
+            packets.append(encoder.encode(pcm+bytes(640-len(pcm))))
+        upload(True)
+        result["encoded_audio_bytes"] = audio_bytes
+        result["audio_frames"] = sequence
         timeline["finish"] = time.monotonic()
         ws.send(1, b'{"type":"finish"}')
         if not done.wait(timeout):
             raise BenchmarkError("final result deadline exceeded")
         if reader_error:
             raise BenchmarkError(str(reader_error[0]) if isinstance(reader_error[0], BenchmarkError) else "socket failed while receiving result")
-        if use_offsets:
-            ws.send(1, b'{"type":"ack"}')
+        ws.send(1, b'{"type":"ack"}')
         completed = True
         # Release follows the capture clock, including any pending upload delay.
         release = start + result["audio_seconds"]
@@ -242,6 +259,7 @@ def trial(token, audio, frame_ms, timeout, resumable):
         result["last_partial_after_finish_seconds"] = timeline.get("last_partial", timeline["finish"]) - timeline["finish"]
         return result
     finally:
+        if encoder is not None: encoder.close()
         if not completed:
             try:
                 ws.send(1, b'{"type":"cancel"}')
@@ -271,16 +289,14 @@ def main():
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--gap-seconds", type=float, default=0.5)
-    parser.add_argument("--frame-ms", type=int, default=100)
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--duty", type=float, default=1.0)
-    parser.add_argument("--legacy", action="store_true", help="use the older non-resumable protocol")
     parser.add_argument("--label", default="baseline")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     max_workers = min(8, max(1, (os.cpu_count() or 1) // 2))
-    if not (1 <= args.runs <= 10 and 1 <= args.repeats <= 50 and 0 <= args.gap_seconds <= 5 and 10 <= args.frame_ms <= 1000 and 1 <= args.timeout <= 180):
+    if not (1 <= args.runs <= 10 and 1 <= args.repeats <= 50 and 0 <= args.gap_seconds <= 5 and 1 <= args.timeout <= 180):
         parser.error("invalid benchmark bounds")
     if not (0 <= args.workers <= max_workers and 0 < args.duty <= 1):
         parser.error(f"workers must be 0..{max_workers}, duty must be >0..1")
@@ -299,7 +315,7 @@ def main():
         if workers:
             time.sleep(1)
         for index in range(args.runs):
-            measurement = trial(token, audio, args.frame_ms, args.timeout, not args.legacy)
+            measurement = trial(token, audio, args.timeout)
             measurement.update(label=args.label, run=index + 1, workers=args.workers, duty=args.duty)
             measurements.append(measurement)
             print(json.dumps(measurement, sort_keys=True), flush=True)

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Lossless/raw protocol trials through a bounded, packetized localhost bottleneck.
+"""Historical protocol 1 experiment: requires the old daemon API.
+Current production timing uses scripts/benchmark-latency.py (Opus protocol 2).
+
+Lossless/raw protocol trials through a bounded, packetized localhost bottleneck.
 
 Uses only the existing daemon's model. This is userspace byte-stream shaping,
 not a cellular/TLS/IP-loss simulation. It changes no global network settings.

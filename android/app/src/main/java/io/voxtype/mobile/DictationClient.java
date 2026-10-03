@@ -77,6 +77,7 @@ final class DictationClient {
 
   private void capture() {
     AudioRecord recorder = null;
+    OpusCapture encoder = null;
     try {
       int size =
           AudioRecord.getMinBufferSize(
@@ -93,6 +94,13 @@ final class DictationClient {
       if (recorder.getState() != AudioRecord.STATE_INITIALIZED)
         throw new IllegalStateException("Microphone could not initialize");
       if (recording) recorder.startRecording();
+      encoder =
+          new OpusCapture(
+              () -> new OpusEncoder(session::audio, session::isCancelled),
+              session::isCancelled,
+              session::finish,
+              error -> fail("Opus encoder: " + error.getMessage()));
+      encoder.start();
       byte[] chunk = new byte[3200]; // 100 ms, s16le mono
       while (recording) {
         int n = recorder.read(chunk, 0, chunk.length, AudioRecord.READ_BLOCKING);
@@ -107,27 +115,42 @@ final class DictationClient {
               "Android has silenced the microphone. Check other recording apps and microphone"
                   + " privacy settings.");
         }
-        capturedBytes += n;
-        if (capturedBytes > session.maxSeconds() * 32000L) {
+        n = (int) Math.min(n, session.maxSeconds() * 32000L - capturedBytes);
+        n -= n % 2;
+        if (n <= 0) {
           recording = false;
           break;
         }
+        capturedBytes += n;
         listener.level(AudioLevel.pcm16(chunk, n));
-        session.audio(java.util.Arrays.copyOf(chunk, n));
+        encoder.audio(chunk, n);
+        session.captured(n / 2);
+        if (capturedBytes >= session.maxSeconds() * 32000L) recording = false;
       }
     } catch (SecurityException e) {
-      fail("Microphone permission was revoked. Allow it in Android Settings.");
+      if (!session.isCancelled())
+        fail("Microphone permission was revoked. Allow it in Android Settings.");
     } catch (Exception e) {
-      fail("Microphone: " + e.getMessage());
+      if (!session.isCancelled()) fail("Microphone: " + e.getMessage());
     } finally {
       if (recorder != null) {
         try {
           recorder.stop();
         } catch (Exception ignored) {
         }
-        recorder.release();
+        try {
+          recorder.release();
+        } catch (Exception error) {
+          if (!session.isCancelled()) fail("Microphone cleanup: " + error.getMessage());
+        }
       }
-      session.finish();
+      if (encoder != null && !session.isCancelled()) {
+        try {
+          encoder.finish();
+        } catch (Exception error) {
+          if (!session.isCancelled()) fail("Opus capture: " + error.getMessage());
+        }
+      }
     }
   }
 
@@ -151,6 +174,7 @@ final class DictationClient {
   }
 
   private void fail(String error) {
+    if (session.isCancelled()) return;
     cancel();
     listener.error(error);
   }

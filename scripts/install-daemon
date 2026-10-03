@@ -5,6 +5,17 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 binary=${1:-$root/artifacts/voxtype-mobile-daemon}
 [[ -x "$binary" ]] || { echo 'Build first: scripts/build-daemon' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'Install Python 3.11 or newer first.' >&2; exit 1; }
+# Codec-only preflight, before replacing files or restarting the sole model owner.
+python3 - <<'PYOPUS'
+import ctypes
+try:
+    codec=ctypes.CDLL('libopus.so.0')
+    for name in ('opus_decoder_create','opus_decoder_destroy','opus_decode_float',
+                 'opus_packet_get_nb_samples','opus_packet_get_nb_channels'):
+        getattr(codec,name)
+except (OSError,AttributeError):
+    raise SystemExit('Install the system Opus runtime first (opus on Arch, libopus0 on Debian/Ubuntu)')
+PYOPUS
 config_dir=${XDG_CONFIG_HOME:-$HOME/.config}
 data_dir=${XDG_DATA_HOME:-$HOME/.local/share}/voxtype-mobile
 # Unit quoting below supports normal paths including spaces; reject control/specifier expansion.
@@ -97,7 +108,7 @@ trap rollback ERR
 systemctl --user daemon-reload
 systemctl --user restart voxtype.service
 python3 - "$data_dir/token" <<'PYREADY'
-import base64,os,socket,sys,time
+import base64,json,os,socket,struct,sys,time
 secret=open(sys.argv[1]).read().strip()
 for _ in range(60):
     try:
@@ -105,10 +116,31 @@ for _ in range(60):
             key=base64.b64encode(os.urandom(16)).decode()
             request=(f'GET /v1/capabilities HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {secret}\r\n\r\n')
             sock.sendall(request.encode())
-            if sock.recv(4096).startswith(b'HTTP/1.1 101'): break
-    except OSError: pass
+            data=bytearray()
+            while b'\r\n\r\n' not in data:
+                chunk=sock.recv(4096)
+                if not chunk or len(data)>16384: raise OSError('Upgrade closed or oversized')
+                data.extend(chunk)
+            header,buffer=data.split(b'\r\n\r\n',1)
+            if not header.startswith(b'HTTP/1.1 101'): raise OSError('Upgrade rejected')
+            def take(size):
+                while len(buffer)<size:
+                    chunk=sock.recv(4096)
+                    if not chunk: raise OSError('Capability response closed')
+                    buffer.extend(chunk)
+                value=bytes(buffer[:size]);del buffer[:size];return value
+            first,second=take(2)
+            if first!=0x81 or second&0x80: raise OSError('Invalid capability frame')
+            size=second&0x7f
+            if size==126: size=struct.unpack('!H',take(2))[0]
+            if size>4096 or size==127: raise OSError('Capability response too large')
+            event=json.loads(take(size))
+            if (event.get('type'),event.get('protocol'),event.get('audio_encodings')) != ('capabilities',2,['opus_v1']):
+                raise OSError('Opus protocol 2 required')
+            break
+    except (OSError,ValueError): pass
     time.sleep(1)
-else: raise SystemExit('Mobile API did not become ready in 60 seconds')
+else: raise SystemExit('Opus protocol 2 mobile API did not become ready in 60 seconds')
 PYREADY
 systemctl --user is-active --quiet voxtype.service
 systemctl --user enable voxtype.service
