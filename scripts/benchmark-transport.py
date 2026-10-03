@@ -104,7 +104,7 @@ class Direction:
 
 
 class Bottleneck:
-    def __init__(self, kbps, delay_ms):
+    def __init__(self, kbps, delay_ms, destination_port=8765):
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen(1)
@@ -113,6 +113,7 @@ class Bottleneck:
         self.stop = threading.Event()
         self.connected = threading.Event()
         self.rate, self.latency = kbps * 1000 / 8, delay_ms / 1000
+        self.destination_port = destination_port
         self.sockets, self.directions = [], []
         self.error = False
         self.thread = threading.Thread(target=self.accept, daemon=True)
@@ -128,7 +129,7 @@ class Bottleneck:
                     continue
             else:
                 return
-            daemon = socket.create_connection(("127.0.0.1", 8765), timeout=5)
+            daemon = socket.create_connection(("127.0.0.1", self.destination_port), timeout=5)
             self.sockets = [client, daemon]
             for connection in self.sockets:
                 connection.settimeout(0.2)

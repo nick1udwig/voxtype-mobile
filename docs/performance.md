@@ -1,7 +1,8 @@
 # Latency and recovery — 2026-09-22
 
 For the later CPU-priority and constrained-bandwidth experiments, see
-[the October 3 latency investigation](latency-investigation.md).
+[the October 3 latency investigation](latency-investigation.md) and the
+[Opus versus lossless compression comparison](opus-investigation.md).
 
 ## Deployed CPU streaming profile
 

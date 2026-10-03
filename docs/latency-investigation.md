@@ -165,8 +165,10 @@ Local raw evidence is in
   without measuring actual failure behavior could create unnecessary reconnects.
 - A lossy speech codec offers a larger bandwidth reduction. An offline FFmpeg
   Opus 24 kbit/s encode produced an Ogg file about 9% of the fixture's PCM size.
-  This is neither an Android implementation nor a recognition accuracy result;
-  default adoption requires separate codec, resumption and phone validation.
+  The subsequent [live Opus comparison](opus-investigation.md) measures encoding,
+  shaped delivery and recognition for Opus and Opus+zlib against fresh raw and
+  PCM+zlib controls. Production adoption still requires Android, resumption and
+  phone validation.
 
 Android documents Opus encoding from Android 10, and the
 [Opus project](https://www.opus-codec.org/) describes its low-bitrate speech
