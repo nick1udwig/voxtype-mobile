@@ -45,7 +45,7 @@ final class DictationSession extends WebSocketListener {
   private WebSocket socket;
   private int bytes, nextFrame, retries;
   private int frameOffset, sentBytes;
-  private boolean resumable;
+  private boolean resumable, lossless;
   private String sessionId = newSessionId();
 
   private static String newSessionId() {
@@ -80,6 +80,7 @@ final class DictationSession extends WebSocketListener {
   private void connect() {
     if (done || paused) return;
     ready = finishSent = false;
+    lossless = false; // Negotiation belongs to this connection, including after a server restart.
     lastPartial = "";
     nextFrame = 0;
     frameOffset = sentBytes = 0;
@@ -88,7 +89,12 @@ final class DictationSession extends WebSocketListener {
     try {
       socket =
           factory.newWebSocket(
-              request.newBuilder().header("X-Voxtype-Session", sessionId).build(), this);
+              request
+                  .newBuilder()
+                  .header("X-Voxtype-Session", sessionId)
+                  .header("X-Voxtype-Audio", LosslessPcm.ENCODING)
+                  .build(),
+              this);
       state(finished ? "Transcribing… reconnecting" : "Connecting…");
       scheduler.after(20, () -> pump(id));
     } catch (Exception e) {
@@ -189,17 +195,24 @@ final class DictationSession extends WebSocketListener {
       // Pace replay in small bursts and let TCP backpressure slow uploads without losing audio.
       int sent = 0;
       while (nextFrame < audio.size() && socket.queueSize() < 64000 && sent < 16000) {
-        ByteString payload = audio.get(nextFrame).substring(frameOffset);
+        ByteString payload =
+            audio
+                .get(nextFrame)
+                .substring(
+                    frameOffset,
+                    Math.min(audio.get(nextFrame).size(), frameOffset + LosslessPcm.MAX_PCM_BYTES));
+        ByteString body = lossless ? LosslessPcm.encode(payload) : payload;
         ByteString frame =
-            resumable
-                ? new okio.Buffer().writeLong(sentBytes).write(payload).readByteString()
-                : payload;
+            resumable ? new okio.Buffer().writeLong(sentBytes).write(body).readByteString() : body;
         if (!socket.send(frame)) {
           recover("Audio connection interrupted", true);
           return;
         }
-        ++nextFrame;
-        frameOffset = 0;
+        frameOffset += payload.size();
+        if (frameOffset == audio.get(nextFrame).size()) {
+          ++nextFrame;
+          frameOffset = 0;
+        }
         sentBytes += payload.size();
         sent += payload.size();
         lastProgress = now;
@@ -276,6 +289,12 @@ final class DictationSession extends WebSocketListener {
             return;
           }
           maxSeconds = seconds;
+          String encoding = event.optString("audio_encoding", "pcm_s16le");
+          if (!encoding.equals("pcm_s16le") && !encoding.equals(LosslessPcm.ENCODING)) {
+            recover("Unsupported server audio encoding", false);
+            return;
+          }
+          lossless = encoding.equals(LosslessPcm.ENCODING);
           resumable = event.optBoolean("resume", false);
           long accepted = resumable ? event.getLong("accepted_bytes") : 0;
           boolean serverFinished = resumable && event.getBoolean("finished");

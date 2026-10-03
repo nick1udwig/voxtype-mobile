@@ -154,6 +154,72 @@ public class DictationSessionTest {
     return new okio.Buffer().writeLong(offset).write(bytes).readByteString();
   }
 
+  void compressedReady(long accepted) {
+    session.onMessage(
+        current(),
+        READY.substring(0, READY.length() - 1)
+            + ",\"resume\":true,\"accepted_bytes\":"
+            + accepted
+            + ",\"finished\":false,\"framing\":\"offset_pcm_s16le\",\"audio_encoding\":\""
+            + LosslessPcm.ENCODING
+            + "\"}");
+  }
+
+  @Test
+  public void compressionIsNegotiatedAndResumeCanSwitchToOldServerInsideFrame() throws Exception {
+    start();
+    assertEquals(LosslessPcm.ENCODING, current().request().header("X-Voxtype-Audio"));
+    byte[] pcm = new byte[3200];
+    pcm[3199] = 1;
+    session.audio(pcm);
+    compressedReady(0);
+    clock.advance(20);
+    okio.Buffer frame = new okio.Buffer().write(current().frames.get(0));
+    assertEquals(0, frame.readLong());
+    assertEquals(ByteString.of(pcm), LosslessPcmTest.decode(frame.readByteString()));
+    lost(current());
+    clock.advance(500);
+    resumeReady(1600, false);
+    clock.advance(20);
+    assertEquals(
+        new okio.Buffer().writeLong(1600).write(pcm, 1600, 1600).readByteString(),
+        current().frames.get(0));
+    assertEquals(3200, session.retainedBytes());
+  }
+
+  @Test
+  public void compressedResumeReencodesOnlyRemainingDecodedPcm() throws Exception {
+    start();
+    byte[] pcm = new byte[3200];
+    pcm[3199] = 1;
+    session.audio(pcm);
+    resumeReady(0, false);
+    clock.advance(20);
+    lost(current());
+    clock.advance(500);
+    compressedReady(1600);
+    clock.advance(20);
+    okio.Buffer frame = new okio.Buffer().write(current().frames.get(0));
+    assertEquals(1600, frame.readLong());
+    assertEquals(ByteString.of(pcm, 1600, 1600), LosslessPcmTest.decode(frame.readByteString()));
+  }
+
+  @Test
+  public void noAcknowledgmentFallsBackToLegacyRawAndUnknownEncodingRetainsAudio() {
+    start();
+    session.audio(new byte[] {1, 2});
+    ready();
+    clock.advance(20);
+    assertEquals(List.of(ByteString.of((byte) 1, (byte) 2)), current().frames);
+    lost(current());
+    clock.advance(500);
+    session.onMessage(
+        current(), READY.substring(0, READY.length() - 1) + ",\"audio_encoding\":\"unknown\"}");
+    assertTrue(session.canRetry());
+    assertEquals(2, session.retainedBytes());
+    assertTrue(current().frames.isEmpty());
+  }
+
   @Test
   public void resumeSkipsAcceptedAudioAndHandlesCheckpointInsideFrame() {
     start();

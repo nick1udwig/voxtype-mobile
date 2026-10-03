@@ -33,6 +33,11 @@ sources are included in the fork. The upstream MIT license remains intact.
   unacknowledged result cache and reconnect/cancellation regression tests.
 - `b407839`: preserve desktop Unified results on stop/release, use the normal
   desktop output pipeline, and publish Omarchy-compatible recording states.
+- `59a5be2`: negotiate independent lossless PCM frames, retain decoded-byte
+  resume checkpoints, and reject malformed or oversized compressed audio.
+  Validated with fake-model protocol tests and sequential live trials against
+  the sole daemon; see [latency measurements](latency-investigation.md).
+  This commit is local and must be published before publishing the parent pin.
 
 ## Normal development
 

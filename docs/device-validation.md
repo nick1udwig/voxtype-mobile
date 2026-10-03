@@ -64,6 +64,18 @@ only running Voxtype service. Record Android version and app versions.
   audio should replay successfully. Cancel while connecting and during upload;
   a new dictation must become available once prior inference joins. Cancel while
   offline: no late result may insert; the abandoned session eventually expires.
+- On 0.1.8, verify the upgraded daemon acknowledges `audio_encoding:
+  pcm_s16le_zlib_v1` and dictations retain their first/last words and punctuation.
+  Compare release delay for the same 10-, 30- and 60-second speech on sufficient
+  and poor uplinks, including speech with silence and noisy audio. Capture only
+  timing/counter metadata; JVM tests and shaped localhost fixtures do not validate
+  phone CPU cost, cellular latency or battery use.
+- On 0.1.8, test the APK with an older daemon that omits `audio_encoding`; it
+  must upload raw PCM and deliver one complete final. Reconnect during compressed
+  upload and after finish: the checkpoint must count decoded PCM bytes and the
+  retained suffix must resume without repeating or dropping speech. Include a
+  daemon restart/downgrade between connections, which must negotiate again and
+  safely replay/resume raw PCM. X must cancel without late insertion.
 - Leave an unfinished recording disconnected for over 30 seconds, then retry.
   Verify full replay after expiry, without losing offline speech. After successful
   delivery, inspect metadata logs for one model load across repeated reconnects.

@@ -1,5 +1,8 @@
 # Latency and recovery — 2026-09-22
 
+For the later CPU-priority and constrained-bandwidth experiments, see
+[the October 3 latency investigation](latency-investigation.md).
+
 ## Deployed CPU streaming profile
 
 The single existing Unified model now uses this profile on the i7-1280P host:
