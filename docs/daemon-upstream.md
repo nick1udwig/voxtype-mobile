@@ -46,6 +46,16 @@ sources are included in the fork. The upstream MIT license remains intact.
   fixture shared with Android tests. System libopus is a runtime dependency.
   This commit is local and must be published before publishing the parent pin.
 
+- `c9b7bad`: admit two Unified streams through the daemon's existing shared
+  model (two phones, or desktop plus phone), retaining exclusive batch admission.
+  Keep result destinations, resume IDs and cancellation independent; join all
+  workers on shutdown. Desktop Stop drains queued audio and the resampler tail;
+  callback overflow/device failure prevents truncated successful output.
+  Validated with 72 focused fake-model tests and the Android build/unit/lint
+  helper. Strict Clippy has five existing warnings; checks pass with those lint
+  categories excluded. Physical microphone/phone validation remains separate.
+  This commit is local and must be published before publishing the parent pin.
+
 ## Normal development
 
 ```bash

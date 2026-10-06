@@ -87,8 +87,10 @@ audio, without another full-recording pass. Final text processing runs once.
 Unified is English-only and uses buffered context windows, not encoder caching.
 The batch-model path remains available for `parakeet-tdt-0.6b-v3`; that path still
 uses cumulative audio snapshots and a complete final pass.
-There is one admitted session and one inference at a time. Cancellation waits
-for running inference before releasing admission. Phone sessions do not use
+Unified admits up to two streams: two phones, or desktop plus one phone.
+The shared model mutex serializes inference; extra requests return busy.
+Batch models keep exclusive admission. Cancellation waits for running inference
+before releasing that stream's slot. Phone sessions do not use
 Linux output hooks, keyboard, clipboard, media controls or desktop context.
 
 The mobile interface accepts preloaded batch models or Parakeet Unified streaming.

@@ -1,8 +1,8 @@
-# Unified streaming — 2026-09-22
+# Unified streaming — 2026-10-06
 
 ## Implemented architecture
 
-Android sends 100 ms PCM frames over the existing `/voxtype/v1/dictate`
+Android sends Opus frames containing up to 100 ms of audio over `/voxtype/v1/dictate`
 WebSocket. `remote.rs` discovers the preloaded transcriber's streaming trait and
 feeds its bounded input channel. It forwards cumulative previews and returns the
 completed transcript after the backend flushes its tail. It never calls batch
@@ -11,9 +11,27 @@ inference for a streaming session. The daemon applies final text processing once
 Desktop and phone use the same `ParakeetUnifiedHandle`. In the pinned
 `parakeet-rs` 0.3.5 implementation, `from_shared_with_streaming_config` clones an
 `Arc<Mutex<ParakeetUnifiedModel>>` holding the ONNX sessions. Each recording gets
-new decoder state, not another model load. Global admission still allows only
-one desktop or phone session. Disconnect, cancellation and errors join the worker
-before that admission is released. Full audio queues apply bounded backpressure without dropping samples. No remote results invoke desktop output handlers.
+new decoder state, not another model load. Admission allows two streams total:
+two phones, or desktop plus one phone. The shared mutex serializes model inference;
+this is independent streaming state, not batched inference. Additional requests
+return busy and the Android client retains its bounded recording for retry.
+Batch models still use one exclusive desktop or phone session.
+Cancellation and errors join the affected worker before releasing its slot.
+A disconnected unfinished phone retains its own resume window; another phone
+cannot abandon it. No remote results invoke desktop output handlers.
+
+Desktop Stop closes capture and lets the bounded audio tap drain queued samples
+and the resampler tail. The tap applies backpressure while result consumption
+continues. The real-time capture callback cannot wait: if its bounded queue fills,
+or the audio device fails, the session reports an error and inserts no truncated
+final. Desktop stop/cancel acts only on desktop; phone cancellation acts only on
+that phone. Shutdown cancels all streams and joins their existing workers.
+
+The shared-handle benchmark on the i7-1280P CPU with a 1.12-second chunk produced
+0.99–1.47-second release-to-final latency for two paced 21-second streams, versus
+0.56–0.59 seconds for one. Thirty isolated-reference comparisons matched exactly;
+40 stream lifecycles had no inference errors or duplicate finals. These measured
+the backend, not real phone transport or physical microphone capture.
 
 The streaming implementation uses bounded context windows and persistent decoder
 state. It recomputes overlapping encoder context; describing it as fully

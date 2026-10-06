@@ -33,8 +33,10 @@ the 480-second session limit. Completed results are cached in daemon memory for
 90 seconds, bounded to eight entries; acknowledgment or eviction erases them.
 Reconnect after finish can retrieve the same final without another model pass.
 Explicit cancel releases the session after any in-flight inference joins; a
-broken network can delay cancellation until expiry. A new dictation abandons a
-disconnected unfinished predecessor.
+broken network can delay cancellation until expiry. Session IDs are independent;
+a new dictation cannot abandon another disconnected session. Unified admits two
+streams total, including desktop; additional sessions return busy. Batch models
+retain exclusive admission.
 
 Daemon restart, cache expiry, or an inference error requires full replay through
 the existing model. Replay restarts from encoded frame 0 with its original codec pre-skip.

@@ -118,8 +118,15 @@ only running Voxtype service. Record Android version and app versions.
   OEM behavior still needs checking for background microphone promotion;
   test this specifically without the settings activity open. The app reports
   the platform error. Do not silently record through another service.
-- During phone recording, desktop start/stop/cancel must not affect the phone.
-  During desktop recording/transcribing, phone admission must return busy.
+- With Unified, run desktop plus one phone, and two phones concurrently. Their
+  previews, finals and cancellation must remain independent; only desktop output
+  uses Linux typing, clipboard, media and hooks. A third stream must return busy
+  until one worker actually joins. Test both start orders and cancellation while
+  final inference drains. Batch models must still return busy across sessions.
+- Stop desktop capture while inference is backed up: verify first/last words,
+  queued audio and the resampler tail survive. Force capture overflow or unplug
+  the microphone: an error must replace successful output. Disconnect one phone,
+  start another, then resume the first within its window without losing audio.
 - Warm the patched daemon once, alternate phone and desktop 10 times, including
   cancel during preview: journal shows one model load; inspect process RSS and
   GPU memory if applicable. No separate `voxtype transcribe` process is launched.
