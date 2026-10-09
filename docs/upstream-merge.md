@@ -1,70 +1,72 @@
-# Upstream merge assessment — 2026-10-09
+# Stable upstream integration — 2026-10-09
 
-## Result
+## Release and result
 
-Merging upstream into `mobile-api` is **moderate integration work**.
-The textual conflicts are concentrated, but they affect model ownership, audio draining and final-result delivery.
-Publishing the current fork does not need to wait for it.
+The `mobile-api` fork now includes upstream's latest stable release, [v1.1.0](https://github.com/peteonrails/voxtype/releases/tag/v1.1.0).
+The release tag points to `e2638ca63f566f1682bcedc0abea8e4b25211c21`.
+The fork integration commit is `0073b494bdc6e42ec9d98583df78784d6d7a7e2c`.
+The newer `v1.1.1-rc*` tags were excluded.
+The merge was prepared on `merge/upstream-v1.1.0` from fork commit `c9b7bad67ed0bbe36087dd1b07a346af26c22abb`, then integrated into `mobile-api` after validation.
+The original common release base was `v1.0.1`, `dda37ca72b71294d08b0c5bb49c5b24ca590d847`.
 
-Upstream has `main` and `dev`, with no `master` branch.
-This assessment treats “upstream master” as the stable `main` branch.
-After fetching upstream:
+This was moderate integration work: seven conflict blocks in two files, plus call-site and ownership changes in code that merged automatically.
+The merge and parent pin update are local until published.
+No service was restarted and no real model was loaded for validation.
 
-- Fork: `c9b7bad67ed0bbe36087dd1b07a346af26c22abb` (`mobile-api`).
-- Upstream stable: `b7792b0ecabb778b047b0e98703a7070803f0e8d` (`main`, Voxtype 1.1.0, release merge dated 2026-09-23).
-- Common release base: `dda37ca72b71294d08b0c5bb49c5b24ca590d847` (1.0.1).
-- Unique commits: 13 on the fork, 103 on upstream `main`.
-- Upstream development tip observed: `6d2fc6ddbf791ac00d6a54dc002664010c16b100`.
+## Conflict resolutions
 
-A real `git merge --no-commit --no-ff` in a separate disposable clone produced **seven conflict blocks in two files**.
-The integration branch, parent pin and running service were not changed.
-No model or daemon was started.
-The trial was not resolved or built, so this is not a validated merged release.
-
-## What conflicts
-
-| File | Blocks | Work needed |
+| File | Blocks | Resolution |
 | --- | ---: | --- |
-| `src/audio/levels.rs` | 1 | Combine the documentation for upstream silence tracking with the fork's bounded, non-dropping streaming sends. The implementation merged automatically. |
-| `src/daemon.rs` | 6 | Combine capture startup, audio forwarding, stop handling, partial/final output, and the two sets of regression tests. |
+| `src/audio/levels.rs` | 1 | Retain upstream silence tracking and the fork's bounded, non-dropping streaming sends. |
+| `src/daemon.rs` | 6 | Combine capture startup, audio forwarding, explicit/silence stop handling, output behavior and both sets of regression tests. |
 
-The daemon conflicts need these decisions:
+Unified desktop Stop still drains captured audio and preserves the pending final transcript.
+The shared stop helper now applies this behavior to upstream silence auto-stop as well as explicit stop.
+It disarms silence tracking and runs the external-trigger stop hook once for the desktop session.
 
-1. **Capture startup:** upstream adds `track_silence`; retain that argument and the fork's capture-error reset.
-2. **Audio forwarding:** preserve upstream silence observations while retaining bounded `send(...).await` in the forwarding task.
-   Choosing upstream's `try_send` branch would silently drop audio when the backend queue fills.
-3. **Stop handling:** upstream shares `stop_active_recording` between explicit stop and silence auto-stop.
-   That helper retains legacy disown-on-stop behavior for ordinary streaming.
-   Port the fork's Unified drain/final-preservation behavior into the shared helper so both stop paths preserve the final.
-4. **Results and file output:** upstream adds silent accumulation for file-output sessions and whole-text processing.
-   Preserve those improvements for relevant backends while keeping Parakeet's cumulative previews out of incremental typing and committing its final once through the normal desktop pipeline.
-5. **Tests:** retain both the fork's isolated desktop/concurrency regressions and upstream's new tests.
-   The large test-block conflict is not a reason to discard either set.
+Unified previews remain separate from Linux typing, and its final passes through the normal desktop output pipeline once its worker joins.
+CLI output overrides remain available until that final commit.
+Upstream's ordinary streaming file-output accumulation and whole-text processing are retained.
 
-## Cleanly merged code still needs review
+Upstream moved the preloaded transcriber into a daemon field and added panic recovery.
+Remote admission now borrows that field or an already-cached primary Whisper model without invoking model construction or desktop preparation.
+If desktop panic recovery invalidates cached models, replacement waits for all active workers and other model borrowers to drain.
+This prevents a replacement model from overlapping an existing phone worker's model.
+For a mobile server, the daemon restores the resident primary model before admitting more input, including after a Whisper cache panic.
 
-Upstream moves `transcriber_preloaded` from a local variable to a `Daemon` field so panic recovery can clear it.
-Some remote admission/startup code merges textually but still refers to the removed local variable and old method signatures.
-Update it to the new ownership arrangement and audit the lifetime of the remote shared handle.
-All clients must continue to use the existing daemon's model; panic recovery must not retain a stale remote handle or create concurrent model owners.
+## Validation
 
-Upstream's new `State::Streaming.file_output_path`, silence timeout and external trigger stop hook also need integration review.
-A small conflict count does not establish correct cancellation, admission, shutdown or output isolation.
+The following checks passed with the staged toolchains:
 
-## Recommended workflow
+- `cargo fmt --manifest-path daemon/Cargo.toml --all -- --check`.
+- The full locked Rust suite with `--features parakeet`: 1,223 tests passed and two model-download tests remained ignored.
+- Focused `remote::`, `parakeet_streaming`, `unified_desktop`, audio-level and model-manager tests.
+- Added regressions for the shared stop helper and external hook, Unified CLI file overrides, resident-only model admission, and recovery while a phone/model borrower or Whisper cache borrower is active.
+- `scripts/build-daemon`, producing the optimized local daemon artifact.
+- `scripts/build-android`, including the debug APK, unit tests and lint.
 
-Keep the deployed branch stable and work in a separate branch/worktree:
+Strict Clippy with `-D warnings` reports five existing lint findings in unchanged code paths: `needless_return`, `manual_is_multiple_of`, `result_large_err`, `large_enum_variant` and `manual_checked_ops`.
+The same all-targets Clippy check passes with only those five lint categories allowed.
+These findings remain a limitation of the strict upstream review gate on this host's Rust 1.98 toolchain.
+
+The Rust suite used temporary runtime/config/data directories, and mobile/streaming regressions used fake transcribers.
+The release binary was built without launching it alongside the resident daemon.
+Real phone and desktop behavior still requires [device validation](device-validation.md) before deployment.
+
+## Future updates and publication
+
+Upstream has a stable `main` branch and a development `dev` branch, with no `master` branch.
+For stable updates, fetch tags and select the latest published release that is not a prerelease.
+Prepare the merge on a candidate branch or worktree, retain the shared-model and output-isolation regressions, then integrate it into `mobile-api` after validation.
+
+This merge began with:
 
 ```bash
-git -C daemon fetch upstream
-git -C daemon worktree add .worktrees/upstream-main -b merge/upstream-main mobile-api
-git -C daemon/.worktrees/upstream-main merge --no-commit --no-ff upstream/main
+git -C daemon fetch upstream --tags
+git -C daemon switch -c merge/upstream-v1.1.0 mobile-api
+git -C daemon merge --no-commit --no-ff v1.1.0
 ```
 
-Resolve the lifecycle changes deliberately, update cleanly merged call sites, then run formatting, compile/build checks, the focused `remote::`, `parakeet_streaming`, and `unified_desktop` tests, and upstream's applicable Clippy/test gates.
-Add regressions for silence auto-stop, file output and model-handle recovery with remote sessions; avoid loading real models in tests.
-
-Build using `scripts/build-daemon` against an isolated recursive parent checkout pinned to the candidate daemon commit.
-Do not deploy until the shared-model and real-phone checks in [device-validation.md](device-validation.md) have passed.
-If accepted for deployment, publish the fork commit before updating/publishing the parent pin.
+Publish `mobile-api` to the fork before publishing a parent commit that pins its new daemon commit.
+Build helpers do not fetch, switch branches or deploy the resulting binaries.
 Feature contributions to upstream should target `dev`, as explained in [the contribution workflow](daemon-upstream.md).

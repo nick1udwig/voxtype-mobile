@@ -10,9 +10,12 @@ The fork owns the Rust code, tests and canonical [remote API](../daemon/docs/rem
 - Fork: https://github.com/nick1udwig/voxtype, branch `mobile-api`
 - Upstream: https://github.com/peteonrails/voxtype
 - Original base: `v1.0.1`, `dda37ca72b71294d08b0c5bb49c5b24ca590d847`
+- Latest merged stable release: `v1.1.0`, `e2638ca63f566f1682bcedc0abea8e4b25211c21`
+- Current fork pin: `0073b494bdc6e42ec9d98583df78784d6d7a7e2c`
 
-The fork and parent branches are published.
-On 2026-10-09, remote `mobile-api` contained the pinned commit `c9b7bad67ed0bbe36087dd1b07a346af26c22abb`.
+The fork and parent repositories are published.
+Before the 2026-10-09 stable-release merge, remote `mobile-api` contained `c9b7bad67ed0bbe36087dd1b07a346af26c22abb`.
+The v1.1.0 merge and updated parent pin are local changes until published.
 Every future parent release must likewise point to a commit available at the submodule URL.
 Publish daemon changes before publishing a new parent pin.
 
@@ -38,6 +41,7 @@ These commits describe the evolution of the fork, not independent patches that c
 | `59a5be2` | Historical lossless PCM transport; subsequently replaced by protocol 2. |
 | `4b2cc65` | Opus-only protocol 2, frame resumption, strict decoding bounds and codec fixture. |
 | `c9b7bad` | Two isolated Unified streams through the shared model; desktop capture draining/error handling. |
+| `0073b49` | Merge stable v1.1.0; preserve mobile ownership, audio draining, CLI overrides and safe model recovery. |
 
 The current protocol is Opus-only.
 Earlier PCM transport descriptions in dated benchmark and validation records are historical.
@@ -74,15 +78,17 @@ git -C daemon fetch upstream
 
 ## Updating the fork versus contributing upstream
 
-For bringing stable upstream changes into the fork, see the [2026-10-09 merge assessment](upstream-merge.md).
+For bringing stable upstream changes into the fork, see the [v1.1.0 integration record](upstream-merge.md).
 Upstream's stable branch is `main`; its default development branch is `dev`.
 There is no upstream `master`.
+Merge the latest stable release tag rather than a release candidate or the moving development branch.
 Keep a candidate merge in a separate branch/worktree until it has been validated.
 
 For upstream contributions, use a separate branch based on current `upstream/dev`.
 Propose applicable streaming/desktop fixes separately from the optional remote API.
 Port the required changes, resolve integration differences, and run upstream's formatting, Clippy and test gates.
-Feature discussion should precede a large API proposal; follow [upstream CONTRIBUTING.md](https://github.com/peteonrails/voxtype/blob/dev/CONTRIBUTING.md). Do not claim current-upstream compatibility from tests against the original base.
+Feature discussion should precede a large API proposal; follow [upstream CONTRIBUTING.md](https://github.com/peteonrails/voxtype/blob/dev/CONTRIBUTING.md).
+Do not claim current-upstream compatibility from tests against the original base.
 
 For example, begin a review branch without disturbing the deployed integration:
 

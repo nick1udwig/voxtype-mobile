@@ -195,6 +195,6 @@ Keep any model files or configuration you still need.
 
 - [Development, builds, and application integrations](docs/development.md)
 - [Daemon fork and upstream contributions](docs/daemon-upstream.md)
-- [Upstream merge assessment](docs/upstream-merge.md)
+- [Stable upstream integration](docs/upstream-merge.md)
 - [APK signing and GitHub releases](docs/releases.md)
 - [Unified streaming](docs/streaming.md), [performance measurements](docs/performance.md), and [validation history](docs/validation.md)
