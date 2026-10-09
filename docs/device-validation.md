@@ -1,167 +1,129 @@
 # Device acceptance checklist
 
-Build and unit tests do not establish Android/OEM accessibility behavior. Run
-these on the actual phone with Tailscale connected and the patched daemon as the
-only running Voxtype service. Record Android version and app versions.
+Build and unit tests do not establish Android/OEM accessibility behavior.
+Run these on the actual phone with Tailscale connected and the patched daemon as the only running Voxtype service.
+Record Android version and app versions.
 
-- Grant RECORD_AUDIO and enable the accessibility service. On Android 13+ a
-  sideloaded app may require App info → menu → Allow restricted settings.
-- In a native EditText, Chrome textarea, messaging composer and a Compose text
-  field: button appears above the keyboard without stealing input focus.
-- After updating to 0.1.1, disable/re-enable the accessibility service. Specifically
-  test the ChatGPT Remote **native Android app** composer: button appears when
-  focused, and a final transcript inserts exactly once while its keyboard stays open.
-- Check the small lavender microphone button near the upper right against the
-  reference screenshot, with the keyboard open and closed and after rotation.
-- On recording, verify the order X / activity pill / purple check. The check
-  must remain at the idle button's position through press/release. Voice activity
-  follows microphone loudness and settles to dots in silence. X cancels without
-  insertion or clipboard changes, including while waiting for a final transcript.
-- Hold still: controls stay closed until Android's long-press delay, then the
-  button turns purple and gives haptic feedback if enabled. Start speaking on
-  touch-down, hold for 2 seconds, release: recording stops and one complete final
-  result is inserted, including speech before the controls appeared. Also release
-  a 300–400 ms hold before the controls appear: it must finish the captured audio
-  without switching to tap mode. Repeat with the
-  phone's longer touch-and-hold delay settings, restarting the service after changing them.
-- Tap, speak, tap: capture starts on down, first release reveals the controls and
-  keeps recording; second tap finishes. Include
-  a fast release before the WebSocket handshake completes.
-- Drag the microphone across the display and along each edge. It should follow
-  the finger fluidly without jumps or snapping on release. Starting a drag before
-  the long-press delay must leave recording controls closed and discard that
-  press's provisional recording, with no insertion or clipboard changes.
+- Grant RECORD_AUDIO and enable the accessibility service.
+  On Android 13+ a sideloaded app may require App info → menu → Allow restricted settings.
+- In a native EditText, Chrome textarea, messaging composer and a Compose text field: button appears above the keyboard without stealing input focus.
+- After updating to 0.1.1, disable/re-enable the accessibility service.
+  Specifically test the ChatGPT Remote **native Android app** composer: button appears when focused, and a final transcript inserts exactly once while its keyboard stays open.
+- Check the small lavender microphone button near the upper right against the reference screenshot, with the keyboard open and closed and after rotation.
+- On recording, verify the order X / activity pill / purple check.
+  The check must remain at the idle button's position through press/release.
+  Voice activity follows microphone loudness and settles to dots in silence.
+  X cancels without insertion or clipboard changes, including while waiting for a final transcript.
+- Hold still: controls stay closed until Android's long-press delay, then the button turns purple and gives haptic feedback if enabled.
+  Start speaking on touch-down, hold for 2 seconds, release: recording stops and one complete final result is inserted, including speech before the controls appeared.
+  Also release a 300–400 ms hold before the controls appear: it must finish the captured audio without switching to tap mode.
+  Repeat with the phone's longer touch-and-hold delay settings, restarting the service after changing them.
+- Tap, speak, tap: capture starts on down, first release reveals the controls and keeps recording; second tap finishes.
+  Include a fast release before the WebSocket handshake completes.
+- Drag the microphone across the display and along each edge.
+  It should follow the finger fluidly without jumps or snapping on release.
+  Starting a drag before the long-press delay must leave recording controls closed and discard that press's provisional recording, with no insertion or clipboard changes.
   Android's microphone privacy indicator may appear during provisional capture.
-  Include a slow drag starting just
-  before the delay, diagonal drags and moving out and back to the starting point.
-  A long stationary hold followed by a drag discards that press's recording;
-  small finger jitter still allows ordinary hold-to-dictate.
-- Tap to record, then drag the purple check: recording continues and releasing
-  the drag does not submit. Tap it again to finish. Also drag while transcribing;
-  the result should still insert exactly once. X should remain accessible when
-  controls expand to either side or stack on a narrow display.
-- Hide/show the keyboard, rotate, and disable/re-enable the service after a drag:
-  position persists and stays within the safe display area above the keyboard.
-  Add a second finger during a press and lock the screen mid-drag: no stuck
-  pressed state or unintended submission. Recording should continue through lock
-  if one was active.
+  Include a slow drag starting just before the delay, diagonal drags and moving out and back to the starting point.
+  A long stationary hold followed by a drag discards that press's recording; small finger jitter still allows ordinary hold-to-dictate.
+- Tap to record, then drag the purple check: recording continues and releasing the drag does not submit.
+  Tap it again to finish.
+  Also drag while transcribing; the result should still insert exactly once.
+  X should remain accessible when controls expand to either side or stack on a narrow display.
+- Hide/show the keyboard, rotate, and disable/re-enable the service after a drag: position persists and stays within the safe display area above the keyboard.
+  Add a second finger during a press and lock the screen mid-drag: no stuck pressed state or unintended submission.
+  Recording should continue through lock if one was active.
 - Test start via TalkBack ACTION_CLICK if used; its activation is toggle mode.
-- Speak immediately on down, before the hold turns purple: the beginning is
-  preserved by pre-admission buffering. Include releasing while the WebSocket
-  handshake or codec startup is still in progress.
-- Insert in the middle of existing text, replace a selection in either direction,
-  and insert next to an emoji. Existing text and cursor should be preserved.
+- Speak immediately on down, before the hold turns purple: the beginning is preserved by pre-admission buffering.
+  Include releasing while the WebSocket handshake or codec startup is still in progress.
+- Insert in the middle of existing text, replace a selection in either direction, and insert next to an emoji.
+  Existing text and cursor should be preserved.
 - Ordinary, numeric, web, and visible-password inputs: no button, no insertion.
   Changing to a password field during recording cancels it.
-- Remove input focus during recording: button remains until finish, then result
-  goes to clipboard. Use the in-app clipboard button with no external field.
-- Editors with unavailable accessibility text/selection: Android 13+ uses the
-  input connection to insert at the real cursor. Where that is unavailable, use
-  accessibility paste; otherwise fall back to clipboard without replacing unknown text.
-- Switch apps during transcription: insert only into the currently focused
-  non-password editor, never the previous app's stale input connection. Go Home
-  or remove focus: final text goes to clipboard. Continuous UI/content updates
-  must not prevent the button from appearing.
-- On 0.1.5, confirm the finish pill distinguishes Sending, Reconnecting and
-  Transcribing. Compare 5-, 20- and 60-second dictations and note the final delay;
-  a decoder backlog must not cut off the beginning or end of speech.
-- On 0.1.4 or later, disconnect/reconnect Tailscale while speaking and again after tapping
-  finish. Reconnection should preserve all retained speech and insert one complete
-  result, including speech captured while offline. On 0.1.9, brief reconnects
-  should resume without replaying accepted audio: logs show `resumed=true` and
-  an increasing `accepted_frames`, with one worker completion. Try a brief desktop
-  busy period.
-- On 0.1.6, interrupt Wi-Fi/cellular/Tailscale after finish and reconnect within
-  90 seconds of completion. The same final should insert once without another
-  recognition pass. Reconnect after daemon restart or after cache expiry: retained
-  audio should replay successfully. Cancel while connecting and during upload;
-  a new dictation must become available once prior inference joins. Cancel while
-  offline: no late result may insert; the abandoned session eventually expires.
+- Remove input focus during recording: button remains until finish, then result goes to clipboard.
+  Use the in-app clipboard button with no external field.
+- Editors with unavailable accessibility text/selection: Android 13+ uses the input connection to insert at the real cursor.
+  Where that is unavailable, use accessibility paste; otherwise fall back to clipboard without replacing unknown text.
+- Switch apps during transcription: insert only into the currently focused non-password editor, never the previous app's stale input connection.
+  Go Home or remove focus: final text goes to clipboard.
+  Continuous UI/content updates must not prevent the button from appearing.
+- On 0.1.5, confirm the finish pill distinguishes Sending, Reconnecting and Transcribing.
+  Compare 5-, 20- and 60-second dictations and note the final delay; a decoder backlog must not cut off the beginning or end of speech.
+- On 0.1.4 or later, disconnect/reconnect Tailscale while speaking and again after tapping finish.
+  Reconnection should preserve all retained speech and insert one complete result, including speech captured while offline.
+  On 0.1.9, brief reconnects should resume without replaying accepted audio: logs show `resumed=true` and an increasing `accepted_frames`, with one worker completion.
+  Try a brief desktop busy period.
+- On 0.1.6, interrupt Wi-Fi/cellular/Tailscale after finish and reconnect within 90 seconds of completion.
+  The same final should insert once without another recognition pass.
+  Reconnect after daemon restart or after cache expiry: retained audio should replay successfully.
+  Cancel while connecting and during upload; a new dictation must become available once prior inference joins.
+  Cancel while offline: no late result may insert; the abandoned session eventually expires.
 - On 0.1.9, confirm protocol 2, `audio_encoding: opus_v1` and frame checkpoints.
-  This release has build/fake-codec tests and real-libopus fixture checks, but
-  no connected phone/emulator was available for MediaCodec or accessibility
-  validation. Run these checks before deploying the coordinated app/daemon upgrade.
-- Start speaking immediately and finish while speaking; first/last words must
-  survive. Include short taps released during codec startup, long speech, silence
-  and the five-minute boundary.
-  With a codec-only on-device fixture harness, also exercise exact source
-  durations 1/10/19 ms and 95/100/101 ms and verify exact restored sample counts.
-  Check real MediaCodec config/delay, delayed packets, empty EOS, prompt EOS
-  completion and codec release on cancellation. Log metadata only.
-- Test new app against old daemon: it must retain audio, report coordinated
-  upgrade required, upload no PCM and avoid automatic version-error retries.
+  This release has build/fake-codec tests and real-libopus fixture checks, but no connected phone/emulator was available for MediaCodec or accessibility validation.
+  Run these checks before deploying the coordinated app/daemon upgrade.
+- Start speaking immediately and finish while speaking; first/last words must survive.
+  Include short taps released during codec startup, long speech, silence and the five-minute boundary.
+  With a codec-only on-device fixture harness, also exercise exact source durations 1/10/19 ms and 95/100/101 ms and verify exact restored sample counts.
+  Check real MediaCodec config/delay, delayed packets, empty EOS, prompt EOS completion and codec release on cancellation.
+  Log metadata only.
+- Test new app against old daemon: it must retain audio, report coordinated upgrade required, upload no PCM and avoid automatic version-error retries.
   Old clients against new daemon must receive HTTP 426 before model admission.
-- Disconnect during Opus upload and after finish. Within session retention,
-  resume from whole accepted frames with the same stateful decoder and one
-  inference pass. After daemon restart/cache expiry, replay original encoded
-  frame 0 including pre-skip. Include source captured offline and exactly one
-  insertion after recovery. X cancels without late insertion or error popup.
-- Compare 10-, 30- and 60-second speech at sufficient and poor uplinks; record
-  release delay, encoded bytes, phone CPU/battery and loss of first/last words.
-  Earlier VOIP/libopus host measurements do not measure Android's platform
-  APPLICATION_AUDIO/constrained VBR codec or cellular behavior.
+- Disconnect during Opus upload and after finish.
+  Within session retention, resume from whole accepted frames with the same stateful decoder and one inference pass.
+  After daemon restart/cache expiry, replay original encoded frame 0 including pre-skip.
+  Include source captured offline and exactly one insertion after recovery.
+  X cancels without late insertion or error popup.
+- Compare 10-, 30- and 60-second speech at sufficient and poor uplinks; record release delay, encoded bytes, phone CPU/battery and loss of first/last words.
+  Earlier VOIP/libopus host measurements do not measure Android's platform APPLICATION_AUDIO/constrained VBR codec or cellular behavior.
 - Leave an unfinished recording disconnected for over 30 seconds, then retry.
-  Verify full replay after expiry, without losing offline speech. After successful
-  delivery, inspect metadata logs for one model load across repeated reconnects.
-- Keep Tailscale disconnected until automatic retries run out: microphone stops,
-  the pill says **Tap to retry**, and X remains available. Reconnect and tap the
-  check; the original recording should insert once without speaking again.
+  Verify full replay after expiry, without losing offline speech.
+  After successful delivery, inspect metadata logs for one model load across repeated reconnects.
+- Keep Tailscale disconnected until automatic retries run out: microphone stops, the pill says **Tap to retry**, and X remains available.
+  Reconnect and tap the check; the original recording should insert once without speaking again.
 - With a rejected token, the app should retain audio without repeatedly reconnecting.
-  Correct the saved settings, then tap the check to retry. Entering an unlocked
-  app password field, pressing X or disabling the service must discard retained
-  audio and prevent scheduled retries or late results from inserting anything.
-- Cancel, disable service, deny microphone, wrong token, disconnect
-  Tailscale, stop daemon, slow connection: temporary failures recover as above;
-  permanent microphone errors end capture and are surfaced.
-- On 0.1.7, start a tap-mode dictation in an ordinary editor and let the screen
-  time out. Keep speaking while locked for at least 30 seconds; unlock and tap
-  the check. Verify speech before and after lock appears once in the focused
-  editor. Repeat with the power button, and with the lock occurring during a
-  held button press; no keyguard password should cancel the recording.
+  Correct the saved settings, then tap the check to retry.
+  Entering an unlocked app password field, pressing X or disabling the service must discard retained audio and prevent scheduled retries or late results from inserting anything.
+- Cancel, disable service, deny microphone, wrong token, disconnect Tailscale, stop daemon, slow connection: temporary failures recover as above; permanent microphone errors end capture and are surfaced.
+- On 0.1.7, start a tap-mode dictation in an ordinary editor and let the screen time out.
+  Keep speaking while locked for at least 30 seconds; unlock and tap the check.
+  Verify speech before and after lock appears once in the focused editor.
+  Repeat with the power button, and with the lock occurring during a held button press; no keyguard password should cancel the recording.
 - Finish near a lock transition, or reach the five-minute limit while locked.
-  The transcript should remain private until unlock, then insert into the
-  current non-password editor or copy to clipboard if focus is gone. Verify X
-  still cancels after unlock, and app shutdown still discards a pending result.
-  Check the recording indicator/foreground notification while locked, battery
-  use, and that the microphone is not silenced by the OS. A daemon reconnect
-  during lock should still retain speech. GrapheneOS behavior must be checked
-  on the actual Pixel; JVM tests cannot prove background microphone access.
-- Microphone foreground notification and Android privacy indicator appear only
-  during the session. The system binds accessibility with foreground capabilities (AOSP Android 15);
-  OEM behavior still needs checking for background microphone promotion;
-  test this specifically without the settings activity open. The app reports
-  the platform error. Do not silently record through another service.
-- With Unified, run desktop plus one phone, and two phones concurrently. Their
-  previews, finals and cancellation must remain independent; only desktop output
-  uses Linux typing, clipboard, media and hooks. A third stream must return busy
-  until one worker actually joins. Test both start orders and cancellation while
-  final inference drains. Batch models must still return busy across sessions.
-- Stop desktop capture while inference is backed up: verify first/last words,
-  queued audio and the resampler tail survive. Force capture overflow or unplug
-  the microphone: an error must replace successful output. Disconnect one phone,
-  start another, then resume the first within its window without losing audio.
-- Warm the patched daemon once, alternate phone and desktop 10 times, including
-  cancel during preview: journal shows one model load; inspect process RSS and
-  GPU memory if applicable. No separate `voxtype transcribe` process is launched.
-- With Unified enabled, the ready event reports `preview: streaming`. Dictate
-  for 5, 20 and 60 seconds: words appear in partial events while speaking and
-  release flushes the tail without a full-recording batch pass. Record the final
-  delay and confirm the first and last words survive. Include repeated phrases,
-  punctuation, silence and cancellation while inference is active.
-- On Omarchy, Super+Ctrl+X (the installed `voxtype record toggle` binding)
-  starts dictation, shows the recording indicator, then stops and inserts the
-  complete final. Test explicit `record start` / `record stop` as well as cancel.
-  State should progress recording → transcribing → idle. File overrides must
-  write only to the requested file. Configured processing/output hooks and
-  modifier-release handling must behave like normal desktop dictation.
-- Desktop Unified dictation inserts the complete final once. No cumulative
-  preview is typed repeatedly; hold/release should retain the prior desktop UX.
-- Confirm remote output never types, pastes, plays feedback, pauses media or runs
-  desktop output hooks on Linux. Configured text post-processing still applies.
+  The transcript should remain private until unlock, then insert into the current non-password editor or copy to clipboard if focus is gone.
+  Verify X still cancels after unlock, and app shutdown still discards a pending result.
+  Check the recording indicator/foreground notification while locked, battery use, and that the microphone is not silenced by the OS.
+  A daemon reconnect during lock should still retain speech.
+  GrapheneOS behavior must be checked on the actual Pixel; JVM tests cannot prove background microphone access.
+- Microphone foreground notification and Android privacy indicator appear only during the session.
+  The system binds accessibility with foreground capabilities (AOSP Android 15); OEM behavior still needs checking for background microphone promotion; test this specifically without the settings activity open.
+  The app reports the platform error.
+  Do not silently record through another service.
+- With Unified, run desktop plus one phone, and two phones concurrently.
+  Their previews, finals and cancellation must remain independent; only desktop output uses Linux typing, clipboard, media and hooks.
+  A third stream must return busy until one worker actually joins.
+  Test both start orders and cancellation while final inference drains.
+  Batch models must still return busy across sessions.
+- Stop desktop capture while inference is backed up: verify first/last words, queued audio and the resampler tail survive.
+  Force capture overflow or unplug the microphone: an error must replace successful output.
+  Disconnect one phone, start another, then resume the first within its window without losing audio.
+- Warm the patched daemon once, alternate phone and desktop 10 times, including cancel during preview: journal shows one model load; inspect process RSS and GPU memory if applicable.
+  No separate `voxtype transcribe` process is launched.
+- With Unified enabled, the ready event reports `preview: streaming`.
+  Dictate for 5, 20 and 60 seconds: words appear in partial events while speaking and release flushes the tail without a full-recording batch pass.
+  Record the final delay and confirm the first and last words survive.
+  Include repeated phrases, punctuation, silence and cancellation while inference is active.
+- On Omarchy, Super+Ctrl+X (the installed `voxtype record toggle` binding) starts dictation, shows the recording indicator, then stops and inserts the complete final.
+  Test explicit `record start` / `record stop` as well as cancel.
+  State should progress recording → transcribing → idle.
+  File overrides must write only to the requested file.
+  Configured processing/output hooks and modifier-release handling must behave like normal desktop dictation.
+- Desktop Unified dictation inserts the complete final once.
+  No cumulative preview is typed repeatedly; hold/release should retain the prior desktop UX.
+- Confirm remote output never types, pastes, plays feedback, pauses media or runs desktop output hooks on Linux.
+  Configured text post-processing still applies.
 
-Android 13+ uses AccessibilityService's InputMethod API, without switching the
-user's keyboard. Its commitText is one-way; a nonstandard editor can ignore it
-without reporting failure. Test actual insertion, selection replacement and
-emoji in the apps above; desktop regression tests cannot establish device behavior.
+Android 13+ uses AccessibilityService's InputMethod API, without switching the user's keyboard.
+Its commitText is one-way; a nonstandard editor can ignore it without reporting failure.
+Test actual insertion, selection replacement and emoji in the apps above; desktop regression tests cannot establish device behavior.
 
 Platform source checked: [AccessibilityServiceConnection, Android 15](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android15-release/services/accessibility/java/com/android/server/accessibility/AccessibilityServiceConnection.java).

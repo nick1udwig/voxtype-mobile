@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
+variant=Debug
+case "${1:-}" in
+  '') ;;
+  --release) variant=Release ;;
+  *) echo 'Usage: scripts/build-android [--release]' >&2; exit 1 ;;
+esac
+if [[ $# -gt 1 ]]; then echo 'Usage: scripts/build-android [--release]' >&2; exit 1; fi
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ -d "$root/.toolchains/jdk" ]]; then export JAVA_HOME="$root/.toolchains/jdk"; fi
 if [[ -d "$root/.toolchains/android" ]]; then export ANDROID_HOME="$root/.toolchains/android"; fi
 export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$root/.toolchains/gradle-home}"
-"$root/android/gradlew" -p "$root/android" --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+"$root/android/gradlew" -p "$root/android" --no-daemon ":app:assemble$variant" ":app:test${variant}UnitTest" ":app:lint$variant"
 mkdir -p "$root/artifacts"
-cp "$root/android/app/build/outputs/apk/debug/app-debug.apk" "$root/artifacts/voxtype-mobile-debug.apk"
+if [[ $variant == Release ]]; then
+  cp "$root/android/app/build/outputs/apk/release/app-release-unsigned.apk" "$root/artifacts/voxtype-mobile-release-unsigned.apk"
+else
+  cp "$root/android/app/build/outputs/apk/debug/app-debug.apk" "$root/artifacts/voxtype-mobile-debug.apk"
+fi

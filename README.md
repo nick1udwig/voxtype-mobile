@@ -1,237 +1,200 @@
 # Voxtype Mobile
 
-Android dictation through the existing Voxtype daemon over Tailscale. This repo
-contains the Android app and an independently maintained Voxtype fork pinned as a Git submodule. The replacement daemon
-is the sole model owner: desktop and phone obtain the same loaded transcriber.
-No inference sidecar, `voxtype transcribe` subprocess, or Android model.
+Voxtype Mobile lets you dictate into Android apps using a speech-recognition model running on your own Linux computer or server.
+An Android app records your voice, sends it to your server over Tailscale, and inserts the returned text into the focused text field.
+Your existing Android keyboard stays available.
 
-## Layout
+Use it when you want phone dictation backed by your own hardware, without a hosted transcription service or a model running on the phone.
+If you also use [Voxtype](https://github.com/peteonrails/voxtype) for desktop dictation, both clients share the same loaded model and daemon.
+Other applications can use the server's [authenticated dictation API](daemon/docs/remote-api.md).
 
-- `android/`: native Java Android app, Android 10+; Gradle wrapper.
-- `daemon/`: Voxtype fork submodule, with full upstream ancestry and focused
-  commits for upstream review. See `docs/daemon-upstream.md`; MIT license in
-  `daemon/LICENSE`.
-- `scripts/`: build, install into the existing service, expose via Tailscale,
-  and restore the packaged daemon.
-- `docs/protocol.md`: authentication, audio format and lifecycle.
-- `docs/device-validation.md`: phone acceptance tests and known platform limits.
-- `artifacts/`: locally built APK and daemon (ignored by Git).
+This is an independently maintained Android companion and Voxtype daemon fork.
+The server requires the fork pinned in this repository; installing stock Voxtype alone does not provide this mobile API.
+Both projects are MIT licensed.
 
-## Checkout and daemon development
+## What you need
 
-Clone this repository with `--recurse-submodules`, or initialize an existing
-checkout with `git submodule update --init --recursive`. The daemon is pinned to
-an exact commit; ordinary builds never fetch or advance it automatically.
+- A Linux computer or server with enough memory for the selected recognition model.
+  Setup below uses the Parakeet TDT batch model; Unified streaming is an optional later configuration.
+- Git, Bash, Python 3.11+, a current stable Rust toolchain, C/C++ build tools, CMake, pkg-config, libclang, ALSA development headers, and the Opus runtime.
+- A systemd user session for automatic service startup.
+  Without one, the installer prints a manual launch command.
+- Tailscale installed and connected on the server and phone, with HTTPS enabled in your tailnet and policy allowing the phone to reach the server on TCP 443.
+- Android 10 or newer.
+  Use a signed APK from [Releases](https://github.com/nick1udwig/voxtype-mobile/releases), when available, or build one as described below.
 
-Make daemon changes and commits inside `daemon/`, push that branch first, then
-stage the new pin with `git add daemon` in this repository. Android code,
-Tailscale/deployment scripts and integration documentation stay here. See
-[the fork/upstream workflow](docs/daemon-upstream.md) for the commit split and
-upstream contribution instructions.
+For example, install the server's native dependencies on Debian/Ubuntu:
 
-For the deployed CPU streaming profile, measured latency, and recovery diagnostics,
-see [performance.md](docs/performance.md).
-
-## Behavior
-
-A floating accessibility button appears for editable non-password fields. Hold
-and release (300 ms threshold), or tap to start and tap again to finish. Audio
-capture begins on touch-down, so you can speak immediately. The recording
-controls stay closed until Android's long-press delay or a tap release; a
-confirmed hold gives haptic feedback. This presentation delay does not delay
-capture or finishing a short hold. The recording is retained in memory until
-completion or cancellation. The overlay
-shows microphone activity, a check to finish and an X to cancel. Only the final transcript is inserted at the current
-selection, preserving surrounding text. If no eligible field exists or the app
-cannot edit it, the transcript is copied to the clipboard. Clipboard dictation
-can also be started from the settings app. Recording continues through screen
-lock with the existing microphone foreground notification. Unlock to finish. If
-a result completes while locked, text is held in memory and inserted into the
-current eligible editor after unlock, or copied to the clipboard when no editor
-is available. Entering a password field in an unlocked app cancels recording.
-
-Temporary transport, busy-daemon and transcription errors reconnect automatically
-and resume accepted audio with backoff and at most eight retries. Daemon restart,
-expired sessions or inference errors replay retained audio. Full queues
-wait for capacity. If recovery still fails, capture stops and **Tap to retry**
-keeps the recording available; X discards it. The hard limit is five minutes
-(at most 2 MiB of encoded Opus), held only in process memory. Closing the service or entering a password field in an unlocked app discards it. Only one final transcript is inserted;
-retries cannot insert stale results or partial previews. See
-[connection and recovery](docs/protocol.md).
-
-Drag the microphone/check button to reposition it. Movement beyond Android's
-standard touch threshold switches the press to dragging and discards provisional
-capture, so repositioning before the long-press delay does not open the recording
-controls. Small finger jitter
-within the threshold still allows hold-to-dictate. A drag after a confirmed hold
-discards any recording started by that same press, while
-an already-running dictation continues. The button follows your finger with
-updates paced to display frames, including while waiting for a transcript.
-Its position is remembered across service restarts, adapts to rotation, and is
-temporarily kept above the keyboard. Finishing an existing session happens on
-release so a drag cannot accidentally submit it.
-
-On Android 13+, insertion uses the accessibility input connection to the current
-editor, alongside your existing keyboard. This supports native/Compose and web
-editors even when their accessibility nodes omit text or selection. Older Android
-versions use accessibility paste or safe text replacement. Input-connection
-commits have no success acknowledgment from the editor, so an app that silently
-ignores them cannot be detected automatically. The idle control is a 48 dp
-lavender rounded square with the app's microphone icon. During recording it becomes a
-purple circular check, with a pill of measured microphone levels and an X to its
-left. Near the left edge the controls expand to the right; in a narrow space
-they stack vertically. The check stays under your finger as the controls expand. The server still
-streams revisable text previews (exposed in the activity meter's accessibility
-description); the visual overlay stays compact like the supplied reference.
-
-After upgrading from 0.1.0, toggle the Voxtype Mobile accessibility service off
-and back on so Android binds its new input connection capability.
-
-The recommended `parakeet-unified-en-0.6b` configuration streams recognition
-through Voxtype's existing Parakeet backend. Desktop and phone share one loaded
-model; each session has its own decoder state. Release flushes the remaining
-audio, without another full-recording pass. Final text processing runs once.
-Unified is English-only and uses buffered context windows, not encoder caching.
-The batch-model path remains available for `parakeet-tdt-0.6b-v3`; that path still
-uses cumulative audio snapshots and a complete final pass.
-Unified admits up to two streams: two phones, or desktop plus one phone.
-The shared model mutex serializes inference; extra requests return busy.
-Batch models keep exclusive admission. Cancellation waits for running inference
-before releasing that stream's slot. Phone sessions do not use
-Linux output hooks, keyboard, clipboard, media controls or desktop context.
-
-The mobile interface accepts preloaded batch models or Parakeet Unified streaming.
-It rejects on-demand loading, GPU isolation, other streaming backends, eager
-processing, secondary models and meeting mode.
-Accessibility behavior and microphone access still need testing on your actual
-phone; arbitrary custom editors may require clipboard fallback.
-
-## Build
-
-Install Rust, C/C++ tools, CMake, libclang and ALSA development headers for the
-daemon. For Android, install JDK 17 and Android SDK platform/build tools 35.
-The build scripts also detect tools staged locally under `.toolchains/`.
-The mobile daemon needs system libopus at runtime (`opus` on Arch, `libopus0`
-on Debian/Ubuntu). Android 0.1.9 and the daemon require coordinated upgrades to
-Opus protocol 2; older PCM/zlib clients and servers are incompatible.
-
-```sh
-scripts/build-daemon
-scripts/build-android
+```bash
+sudo apt install git build-essential cmake pkg-config libclang-dev libasound2-dev libopus0 python3
 ```
 
-The APK is signed with a development key. Keep that key for upgrade installs;
-use your own release signing configuration before distribution.
+On Arch Linux:
 
-## Deploy to this machine
-
-The deployment is staged; building does not replace the running daemon.
-
-For Unified, put the verified model files in
-`~/.local/share/voxtype/models/parakeet-unified-en-0.6b` and configure:
-
-```toml
-[parakeet]
-model = "parakeet-unified-en-0.6b"
-on_demand_loading = false
-streaming = true
-streaming_chunk_secs = 0.56
-streaming_left_context_secs = 5.6
-streaming_right_context_secs = 0.56
+```bash
+sudo pacman -S --needed git base-devel cmake pkgconf clang alsa-lib opus python
 ```
 
-See [streaming.md](docs/streaming.md) for the pinned model export and accuracy/speed
-tradeoffs. Back up the current configuration before changing the model.
+Install a current stable Rust toolchain separately if it is not already available.
+Check `rustc --version` and `python3 --version` before continuing.
+See [Tailscale installation](https://tailscale.com/download/linux) and [HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates).
 
-```sh
-scripts/install-daemon
-journalctl --user -u voxtype -n 40
+## 1. Install the server
+
+Run these commands as the user who will own the service, without `sudo`:
+
+```bash
+git clone --recurse-submodules https://github.com/nick1udwig/voxtype-mobile.git
+cd voxtype-mobile
+scripts/install
+```
+
+The installer builds the pinned daemon, installs it under `~/.local/share/voxtype-mobile/`, and creates or upgrades `voxtype.service`.
+On a new installation it writes `~/.config/voxtype/config.toml` and downloads the `parakeet-tdt-0.6b-v3` model.
+Model download and the first Rust build can take time.
+
+Existing configurations and pairing tokens are preserved.
+If your configuration is incompatible, the installer stops with a correction message.
+This build needs `engine = "parakeet"` and `[parakeet] on_demand_loading = false`; streaming also requires `parakeet-unified-en-0.6b`.
+See [model configuration](docs/streaming.md#configure-the-server) for downloading and selecting either supported model on an existing installation.
+
+If you already run the standard Voxtype user service, installation restarts it with the mobile-capable executable.
+The old daemon stops before the replacement starts, so there is only one model owner.
+Custom service commands require manual review.
+Stop an unmanaged daemon before installing; do not launch another daemon alongside it.
+Failed readiness restores the previous service and executable.
+
+Check the service:
+
+```bash
+systemctl --user status voxtype.service
+journalctl --user -u voxtype -n 50 --no-pager
+```
+
+For a server that must keep running after you log out, enable lingering for this user if your system uses systemd-logind:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+Paths above assume default XDG directories.
+The installer honors `XDG_CONFIG_HOME` and `XDG_DATA_HOME`.
+To install a daemon you have already built, use `scripts/install /path/to/voxtype-mobile-daemon`.
+
+## 2. Connect the server to your tailnet
+
+With Tailscale connected on the server:
+
+```bash
 scripts/expose-tailscale
 ```
 
-The installer adds a drop-in to the existing `voxtype.service` and restarts it.
-Systemd stops the old daemon before starting the replacement. No second daemon
-is started for testing or warmup. The packaged executable and existing config
-remain available for rollback. API readiness is logged after model loading.
-When reverting a model switch, restore the matching configuration backup along
-with the previous binary before restarting the service.
-
-The mobile script mounts **/voxtype** on the existing Tailscale HTTPS listener
-(port 443), preserving the other routes. It refuses to replace a conflicting
-/voxtype target. Tailscale HTTPS must be enabled in the tailnet, and tailnet
-policy must allow the phone to reach TCP 443. The example grant in `infra/` is
-for merging into your policy; it applies to the shared port, not individual URL
-paths. Serve strips /voxtype before forwarding to the daemon.
-
-Install `artifacts/voxtype-mobile-debug.apk` on the phone (or use
-`adb install -r artifacts/voxtype-mobile-debug.apk`). Enable Tailscale, then enter:
+This adds `/voxtype` to Tailscale Serve on HTTPS port 443, forwarding to `127.0.0.1:8765`.
+It preserves other routes and refuses to overwrite a conflicting `/voxtype` route.
+Use the hostname printed by `tailscale serve status` to form:
 
 ```text
-wss://omafwchy.taila510b.ts.net/voxtype/v1/dictate
+wss://YOUR-SERVER.YOUR-TAILNET.ts.net/voxtype/v1/dictate
 ```
 
-Copy the pairing token from `~/.local/share/voxtype-mobile/token` into the app.
-Grant microphone permission and enable Voxtype Mobile accessibility. Android may
-require **App info → ⋮ → Allow restricted settings** for a sideloaded APK.
+The listener is intended for your private tailnet.
+Do not expose it through Tailscale Funnel or a public port.
+HTTPS must be enabled in the tailnet; [Serve documentation](https://tailscale.com/docs/features/tailscale-serve) explains the setup.
+The [example tailnet grant](infra/tailscale-grant.example.json) can be merged into your policy; grants apply to port 443, not individual URL paths.
 
-To rotate the token, replace that file with a new random secret, keep mode 0600,
-restart `voxtype.service`, and save the new token in the phone app.
+## 3. Install and configure the Android app
 
-To restore:
+Install the signed APK on your phone and connect Tailscale to the same tailnet.
+Open Voxtype Mobile and save:
 
-```sh
+- **Server address:** the `wss://.../voxtype/v1/dictate` URL from the previous step.
+- **Pairing token:** the contents of `~/.local/share/voxtype-mobile/token` on the server.
+
+Read the token locally with:
+
+```bash
+cat "${XDG_DATA_HOME:-$HOME/.local/share}/voxtype-mobile/token"
+```
+
+Grant microphone permission and enable the **Voxtype Mobile accessibility service** in Android settings.
+Sideloaded apps on Android 13+ may require **App info → menu → Allow restricted settings** first.
+After an upgrade, toggle the accessibility service off and on if Android has not rebound it.
+
+To build a development APK, install JDK 17, Android SDK platform 35 and Build Tools 35.0.0, then run:
+
+```bash
+scripts/build-android
+adb install -r artifacts/voxtype-mobile-debug.apk
+```
+
+The helper also runs unit tests and lint.
+It discovers tools under `.toolchains/` or uses your configured JDK and Android SDK.
+For a distributable APK, follow [release signing and publication](docs/releases.md).
+
+## Dictate
+
+Focus an ordinary text field in an Android app.
+A floating microphone appears:
+
+- Hold it, speak, then release to finish; or tap, speak, and tap again to finish.
+  Capture begins on touch-down, so you can speak immediately.
+  Recording controls appear after a confirmed tap or the long-press delay.
+- Tap the check to finish or **X** to discard.
+  Drag the control to reposition it.
+- The final transcript is inserted at the current selection.
+  If the editor cannot accept it, or no text field is focused, the app uses the phone's clipboard.
+  The settings app can also start clipboard dictation.
+
+Password fields are excluded.
+An active recording can continue through screen lock; unlock to finish.
+A transcript received while locked waits in memory until unlock.
+Android/OEM microphone restrictions and unusual editors need testing on your device; see the [device checklist](docs/device-validation.md).
+
+Brief connection failures retry automatically.
+If recovery stops, **Tap to retry** keeps the recording available; **X** discards it.
+Recordings are limited to five minutes and 2 MiB of encoded audio, held only in memory.
+Disabling the service or Android terminating the process loses pending audio.
+See [connection and recovery](docs/protocol.md) for details.
+
+Unified streaming supports two sessions total, including desktop dictation; batch models allow one.
+Busy clients wait and retry.
+Phone sessions return results to the phone and do not trigger Linux typing, clipboard, media controls, or output hooks.
+
+## Update, troubleshoot, and remove
+
+Update both the checkout and its pinned daemon before rebuilding:
+
+```bash
+git pull --ff-only
+git submodule update --init --recursive
+scripts/install
+```
+
+Install the corresponding APK signed with the same release key.
+Protocol 2 is required; clients older than Android 0.1.9 cannot use this server.
+If changing models, back up the configuration and obtain the matching model files before restarting; see [streaming setup](docs/streaming.md).
+
+If dictation fails, check the server journal, Tailscale connectivity, the saved URL/token, and Android microphone/accessibility permissions.
+A version error requires compatible app and server versions.
+**Tap to retry** uses the latest saved address and token.
+
+To rotate the token, replace its contents with a new random secret, keep file permissions at `0600`, restart `voxtype.service`, and save it in each client.
+
+To restore a packaged Voxtype service that was upgraded with the mobile drop-in:
+
+```bash
 scripts/uninstall-daemon
 tailscale serve --https=443 --set-path=/voxtype off
 ```
 
-## Verification
+For a service created by this project on a new server, instead run `systemctl --user disable --now voxtype.service`, remove `~/.config/systemd/user/voxtype.service`, then run `systemctl --user daemon-reload` and remove the Tailscale route above.
+The restore helper only removes the drop-in for an existing packaged service.
+Keep any model files or configuration you still need.
 
-```sh
-cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib remote::
-scripts/build-android
-```
+## Further documentation
 
-Rust tests use a fake transcriber to check shared instance reuse, serialized
-preview/final inference, cancellation draining, audio limits, Opus frame decoding,
-exact sample trimming and an authenticated real WebSocket exchange. They load no model. Android unit tests
-cover editor routing, stale focus, accessibility paste, selection replacement,
-emoji offsets, password input variations, gestures and measured audio levels.
-Parakeet streaming regression tests run with
-`cargo test --manifest-path daemon/Cargo.toml --features parakeet --lib parakeet_streaming`.
-See `docs/device-validation.md` for the required real-device and resident-model
-acceptance checks. Build results do not imply these have passed.
-
-## References
-
-- [Voxtype 1.0.1 source](https://github.com/peteonrails/voxtype/tree/dda37ca72b71294d08b0c5bb49c5b24ca590d847)
-- [Android accessibility services](https://developer.android.com/guide/topics/ui/accessibility/service)
-- [Android text actions](https://developer.android.com/reference/android/view/accessibility/AccessibilityNodeInfo.AccessibilityAction#ACTION_SET_TEXT)
-- [Android accessibility input connections](https://developer.android.com/reference/android/accessibilityservice/InputMethod.AccessibilityInputConnection)
-- [Android microphone service restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
-- [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve)
-
-## Install on a new backend
-
-Run `scripts/install` in a recursive checkout. It builds the pinned daemon and
-installs it for the current user. Build prerequisites are listed above. Pass an
-already-built executable as `scripts/install /path/to/voxtype-mobile-daemon` to
-skip compilation. A new installation downloads the default batch Parakeet model;
-existing configurations and tokens are preserved. An incompatible existing
-configuration is rejected with a correction message.
-
-When a systemd user manager is available, installation creates and enables
-`voxtype.service`, or upgrades the standard existing service via its mobile
-drop-in. Restart stops the previous model owner first. Failed readiness restores
-the previous executable and service. Without systemd it installs the files and
-prints a manual launch command; it does not start a second daemon.
-
-A downloaded copy of `scripts/install` accepts `VOXTYPE_MOBILE_REPO` pointing to
-the published repository and clones its pinned submodules. Termai can use a local
-checkout (`TERMAI_VOXTYPE_SOURCE`) or a published script URL
-(`TERMAI_VOXTYPE_INSTALL_URL`). Termai's Install button only pastes a command.
-
-Termai advertises its available microphone with the accessibility label
-`Termai dictation microphone`. The Android service hides its idle overlay only
-when that actionable control is visible in the focused application window.
-Hidden tabs, unavailable daemons and unrelated pages keep normal Voxtype behavior.
-An already-active Android recording keeps its finish/cancel controls.
+- [Development, builds, and application integrations](docs/development.md)
+- [Daemon fork and upstream contributions](docs/daemon-upstream.md)
+- [Upstream merge assessment](docs/upstream-merge.md)
+- [APK signing and GitHub releases](docs/releases.md)
+- [Unified streaming](docs/streaming.md), [performance measurements](docs/performance.md), and [validation history](docs/validation.md)
