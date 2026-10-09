@@ -36,7 +36,11 @@ see [performance.md](docs/performance.md).
 
 A floating accessibility button appears for editable non-password fields. Hold
 and release (300 ms threshold), or tap to start and tap again to finish. Audio
-capture begins on down; the recording is retained in memory until completion or cancellation. The overlay
+capture begins on touch-down, so you can speak immediately. The recording
+controls stay closed until Android's long-press delay or a tap release; a
+confirmed hold gives haptic feedback. This presentation delay does not delay
+capture or finishing a short hold. The recording is retained in memory until
+completion or cancellation. The overlay
 shows microphone activity, a check to finish and an X to cancel. Only the final transcript is inserted at the current
 selection, preserving surrounding text. If no eligible field exists or the app
 cannot edit it, the transcript is copied to the clipboard. Clipboard dictation
@@ -56,8 +60,11 @@ retries cannot insert stale results or partial previews. See
 [connection and recovery](docs/protocol.md).
 
 Drag the microphone/check button to reposition it. Movement beyond Android's
-standard touch threshold switches the press to dragging; holding still keeps
-hold-to-dictate. A drag discards any recording started by that same press, while
+standard touch threshold switches the press to dragging and discards provisional
+capture, so repositioning before the long-press delay does not open the recording
+controls. Small finger jitter
+within the threshold still allows hold-to-dictate. A drag after a confirmed hold
+discards any recording started by that same press, while
 an already-running dictation continues. The button follows your finger with
 updates paced to display frames, including while waiting for a transcript.
 Its position is remembered across service restarts, adapts to rotation, and is

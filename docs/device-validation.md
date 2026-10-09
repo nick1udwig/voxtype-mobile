@@ -17,14 +17,25 @@ only running Voxtype service. Record Android version and app versions.
   must remain at the idle button's position through press/release. Voice activity
   follows microphone loudness and settles to dots in silence. X cancels without
   insertion or clipboard changes, including while waiting for a final transcript.
-- Hold for 2 seconds, release: recording stops and one final result is inserted.
-- Tap, speak, tap: first release keeps recording; second tap finishes. Include
+- Hold still: controls stay closed until Android's long-press delay, then the
+  button turns purple and gives haptic feedback if enabled. Start speaking on
+  touch-down, hold for 2 seconds, release: recording stops and one complete final
+  result is inserted, including speech before the controls appeared. Also release
+  a 300–400 ms hold before the controls appear: it must finish the captured audio
+  without switching to tap mode. Repeat with the
+  phone's longer touch-and-hold delay settings, restarting the service after changing them.
+- Tap, speak, tap: capture starts on down, first release reveals the controls and
+  keeps recording; second tap finishes. Include
   a fast release before the WebSocket handshake completes.
-- On 0.1.3, drag the microphone across the display and along each edge. It should
-  follow the finger fluidly without jumps or snapping on release. The provisional
-  recording is discarded, with no insertion or clipboard changes. Include a
-  long stationary hold followed by a drag, diagonal drags, and small finger jitter
-  during ordinary hold-to-dictate.
+- Drag the microphone across the display and along each edge. It should follow
+  the finger fluidly without jumps or snapping on release. Starting a drag before
+  the long-press delay must leave recording controls closed and discard that
+  press's provisional recording, with no insertion or clipboard changes.
+  Android's microphone privacy indicator may appear during provisional capture.
+  Include a slow drag starting just
+  before the delay, diagonal drags and moving out and back to the starting point.
+  A long stationary hold followed by a drag discards that press's recording;
+  small finger jitter still allows ordinary hold-to-dictate.
 - Tap to record, then drag the purple check: recording continues and releasing
   the drag does not submit. Tap it again to finish. Also drag while transcribing;
   the result should still insert exactly once. X should remain accessible when
@@ -35,7 +46,9 @@ only running Voxtype service. Record Android version and app versions.
   pressed state or unintended submission. Recording should continue through lock
   if one was active.
 - Test start via TalkBack ACTION_CLICK if used; its activation is toggle mode.
-- Speak immediately on down: beginning is preserved by pre-admission buffering.
+- Speak immediately on down, before the hold turns purple: the beginning is
+  preserved by pre-admission buffering. Include releasing while the WebSocket
+  handshake or codec startup is still in progress.
 - Insert in the middle of existing text, replace a selection in either direction,
   and insert next to an emoji. Existing text and cursor should be preserved.
 - Ordinary, numeric, web, and visible-password inputs: no button, no insertion.
