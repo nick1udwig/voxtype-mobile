@@ -115,6 +115,9 @@ public class DictationService extends AccessibilityService {
                   case START:
                     start();
                     break;
+                  case REVEAL:
+                    refreshButton();
+                    break;
                   case FINISH:
                     finish();
                     break;
@@ -375,16 +378,17 @@ public class DictationService extends AccessibilityService {
       cancel(null);
       return;
     }
-    controls.setVisibility(client != null ? View.VISIBLE : View.GONE);
+    boolean recordingVisible = button.recordingVisible();
+    controls.setVisibility(recordingVisible ? View.VISIBLE : View.GONE);
     activity.waiting(waiting);
     activity.retryAvailable(client != null && client.canRetry());
     button.invalidate();
     button.setContentDescription(
-        client != null && client.canRetry()
+        recordingVisible && client.canRetry()
             ? "Retry saved dictation. Drag to move"
-            : waiting
+            : recordingVisible && waiting
                 ? "Transcribing. Drag to move"
-                : client != null
+                : recordingVisible
                     ? "Stop dictation. Drag to move"
                     : "Dictate: hold and release, or tap to start and stop. Drag to move");
     updateBounds();
@@ -393,8 +397,8 @@ public class DictationService extends AccessibilityService {
       wm.addView(overlay, params);
       added = true;
     } else if (!visible && added) {
-      wm.removeView(overlay);
       added = false;
+      wm.removeView(overlay);
     }
   }
 
@@ -446,7 +450,7 @@ public class DictationService extends AccessibilityService {
             dp(48),
             dp(146),
             dp(6),
-            client != null);
+            button.recordingVisible());
     placeChild(button, p.buttonX, p.buttonY);
     placeChild(controls, p.panelX, p.panelY);
     controls.setLayoutDirection(

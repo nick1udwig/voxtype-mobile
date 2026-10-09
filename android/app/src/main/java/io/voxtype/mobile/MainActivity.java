@@ -90,8 +90,9 @@ public class MainActivity extends Activity {
     TextView usage = new TextView(this);
     usage.setText(
         "\n"
-            + "Open a text field in another app. Hold the floating button and release to finish, or"
-            + " tap once to start and again to finish. Password fields are excluded. If focus"
+            + "Open a text field in another app. Hold the floating button and speak immediately;"
+            + " release to finish. Or tap once to start and again to finish."
+            + " Drag the button to move it. Password fields are excluded. If focus"
             + " disappears, the result is copied to the clipboard. Recording continues when the"
             + " screen locks. Unlock to finish; if a result completes while locked, it is delivered"
             + " after unlock.\n\n"
